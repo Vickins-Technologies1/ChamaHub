@@ -1221,6 +1221,8 @@ h4 {
 .landing-final .landing-heading { color: #fff; }
 .landing-security .landing-eyebrow,
 .landing-final .landing-eyebrow { color: #6ee7d4; }
+.landing-powered { color: #7a879a; font-size: 11px; letter-spacing: .015em; transition: color .2s ease; }
+.landing-powered:hover { color: #0c3c9b; }
 .landing-text-link { display: inline-flex; align-items: center; gap: .5rem; color: #0c3c9b; font-size: 14px; font-weight: 700; }
 .landing-text-link:hover { color: #178591; }
 .landing-finance, .landing-payout-card { padding: clamp(1.3rem, 3.5vw, 2rem); }
