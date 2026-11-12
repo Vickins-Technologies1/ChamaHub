@@ -56,7 +56,7 @@ function MemberLoginContent() {
 
     if (!isMember) {
       await authClient.signOut();
-      setError("This login is for ChamaHub members. Use the moderator or admin login.");
+      setError("This login is for ChamaPulse members. Use the moderator or admin login.");
       setLoading(false);
       return;
     }
@@ -69,9 +69,9 @@ function MemberLoginContent() {
   return (
     <AuthShell
       eyebrow="Member Login"
-      title="Access your ChamaHub member wallet."
+      title="Access your ChamaPulse member wallet."
       subtitle="Check contributions, upcoming payouts, and member updates in one secure place."
-      brandTitle="ChamaHub Members"
+      brandTitle="ChamaPulse Members"
       brandSubtitle="Stay synced with your group, anytime."
       brandPoints={[
         "Track your savings contributions in real time.",

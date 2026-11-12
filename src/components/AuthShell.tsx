@@ -30,7 +30,7 @@ export default function AuthShell({
           <div className="flex items-center gap-3">
             <BrandLogo size={54} priority />
             <div>
-              <p className="text-xs uppercase tracking-[0.4em] text-white/70">ChamaHub</p>
+              <p className="text-xs uppercase tracking-[0.4em] text-white/70">ChamaPulse</p>
               <p className="text-lg font-semibold text-white">{brandTitle}</p>
             </div>
           </div>

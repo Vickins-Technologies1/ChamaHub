@@ -94,7 +94,7 @@ export default function LedgerPage() {
           Transaction history
         </h1>
         <p className="text-sm text-[var(--muted)] mt-2">
-          Review contribution records across your ChamaHub groups.
+          Review contribution records across your ChamaPulse groups.
         </p>
       </section>
 

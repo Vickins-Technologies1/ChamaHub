@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import ChamaLayout from "@/components/ChamaLayout";
 
 export const metadata: Metadata = {
-  title: "ChamaHub Workspace",
+  title: "ChamaPulse Workspace",
   robots: { index: false, follow: false },
 };
 

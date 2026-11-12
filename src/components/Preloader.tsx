@@ -71,7 +71,7 @@ export default function Preloader({ isDarkMode }: PreloaderProps) {
               <BrandLogo size={110} className="absolute inset-0 m-auto h-16 w-16 sm:h-20 sm:w-20" />
             </div>
             <p className={`text-[10px] uppercase tracking-[0.5em] ${textMuted} mt-6`}>
-              ChamaHub
+              ChamaPulse
             </p>
             <h1 className={`text-2xl sm:text-3xl font-semibold ${textPrimary} mt-2`}>
               Crafting your experience

@@ -43,7 +43,7 @@ const TreasurerLedgerPdf = ({ groupName, currency, entries }: TreasurerLedgerPdf
   <Document>
     <Page size="A4" style={styles.page}>
       <View style={styles.header}>
-        <Text style={styles.title}>ChamaHub Treasurer Ledger</Text>
+        <Text style={styles.title}>ChamaPulse Treasurer Ledger</Text>
         <Text style={styles.subtitle}>
           {groupName} • Generated {new Date().toLocaleDateString("en-KE")}
         </Text>
@@ -102,7 +102,7 @@ const TreasurerLedgerPdf = ({ groupName, currency, entries }: TreasurerLedgerPdf
       </View>
 
       <View style={styles.footer}>
-        <Text>ChamaHub • Treasurer ledger export</Text>
+        <Text>ChamaPulse • Treasurer ledger export</Text>
       </View>
     </Page>
   </Document>

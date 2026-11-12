@@ -108,7 +108,7 @@ export async function POST(request: Request) {
     const canCreate = isSiteAdmin(user) || isModerator(user);
     if (!canCreate) {
       return NextResponse.json(
-        { error: "Only ChamaHub moderators can create groups." },
+        { error: "Only ChamaPulse moderators can create groups." },
         { status: 403 }
       );
     }

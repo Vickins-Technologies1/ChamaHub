@@ -9,7 +9,7 @@ import { ArrowRight, CheckCircle2, Users, Wallet } from "lucide-react";
 function ModeratorOnboardingContent() {
   const searchParams = useSearchParams();
   const groupId = searchParams.get("groupId");
-  const groupName = searchParams.get("groupName") ?? "your ChamaHub group";
+  const groupName = searchParams.get("groupName") ?? "your ChamaPulse group";
 
   return (
     <div className="min-h-screen flex items-center justify-center px-4 py-12">

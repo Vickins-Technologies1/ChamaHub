@@ -1,7 +1,7 @@
 {
-  "name": "ChamaHub",
-  "short_name": "ChamaHub",
-  "description": "Manage chama groups, meetings, and contributions with ChamaHub.",
+  "name": "ChamaPulse",
+  "short_name": "ChamaPulse",
+  "description": "Your Group. One Financial Pulse. Manage group savings, contributions, payouts and investments with ChamaPulse.",
   "start_url": "/",
   "display": "standalone",
   "background_color": "#ffffff",

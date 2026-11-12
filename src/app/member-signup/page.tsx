@@ -73,7 +73,7 @@ function MemberSignupContent() {
   return (
     <AuthShell
       eyebrow="Member Signup"
-      title="Create your ChamaHub member profile."
+      title="Create your ChamaPulse member profile."
       subtitle="Use the same email you received your group invite with to automatically link to your chama."
       brandTitle="Member Access"
       brandSubtitle="Join your savings circle with confidence."

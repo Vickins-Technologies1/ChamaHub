@@ -2,7 +2,14 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
-  // outputFileTracingRoot: path.join(__dirname, "../.."),
+  async redirects() {
+    return [{
+      source: "/:path*",
+      has: [{ type: "host", value: "chamahub.vickinstechnologies.com" }],
+      destination: "https://chamapulse.vickinstechnologies.com/:path*",
+      permanent: true,
+    }];
+  },
 };
 
 export default nextConfig;

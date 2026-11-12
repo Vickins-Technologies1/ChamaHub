@@ -142,7 +142,7 @@ export async function GET() {
     });
   } catch (error) {
     return NextResponse.json(
-      { error: "Unable to load ChamaHub analytics." },
+      { error: "Unable to load ChamaPulse analytics." },
       { status: 500 }
     );
   }
@@ -268,17 +268,17 @@ export async function PATCH(request: Request) {
           if (!recipient || !transporter) return false;
           const inviteLink = `${baseUrl}/member-signup?email=${encodeURIComponent(
             recipient
-          )}&groupName=${encodeURIComponent(group.name ?? "ChamaHub group")}`;
+          )}&groupName=${encodeURIComponent(group.name ?? "ChamaPulse group")}`;
 
           try {
             await transporter.sendMail({
               from: process.env.EMAIL_USER,
               to: recipient,
-              subject: `Reminder: join ${group.name ?? "your ChamaHub group"}`,
+              subject: `Reminder: join ${group.name ?? "your ChamaPulse group"}`,
               html: `
                 <div style="font-family: Arial, sans-serif; line-height: 1.6; color: #0b1220;">
-                  <h2 style="margin: 0 0 12px;">ChamaHub reminder</h2>
-                  <p>You’ve been invited to join <strong>${group.name ?? "a ChamaHub group"}</strong>.</p>
+                  <h2 style="margin: 0 0 12px;">ChamaPulse reminder</h2>
+                  <p>You’ve been invited to join <strong>${group.name ?? "a ChamaPulse group"}</strong>.</p>
                   <p>Create your member account to view contributions, payments, and payout schedules.</p>
                   <p style="margin-top: 18px;">
                     <a href="${inviteLink}" style="background:#1b5cff;color:#fff;padding:12px 18px;border-radius:999px;text-decoration:none;font-weight:600;">
@@ -462,7 +462,7 @@ export async function PATCH(request: Request) {
     return NextResponse.json({ error: "Unsupported action." }, { status: 400 });
   } catch (error) {
     return NextResponse.json(
-      { error: "Unable to update ChamaHub group." },
+      { error: "Unable to update ChamaPulse group." },
       { status: 500 }
     );
   }

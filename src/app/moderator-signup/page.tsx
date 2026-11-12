@@ -78,7 +78,7 @@ export default function ModeratorSignupPage() {
   return (
     <AuthShell
       eyebrow="Moderator Signup"
-      title="Lease your first ChamaHub group in minutes."
+      title="Launch your first ChamaPulse group in minutes."
       subtitle="Create your moderator account, set up your group, and invite members right away."
       brandTitle="Moderator Access"
       brandSubtitle="Launch a premium group experience for your members."

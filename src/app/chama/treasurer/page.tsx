@@ -268,7 +268,7 @@ export default function TreasurerPanelPage() {
         </p>
         <h1 className="text-2xl font-semibold">No treasurer access yet</h1>
         <p className="text-sm text-[var(--muted)]">
-          Ask your moderator to assign you the treasurer role inside a ChamaHub group.
+          Ask your moderator to assign you the treasurer role inside a ChamaPulse group.
         </p>
         <Link
           href="/chama/groups"
@@ -409,7 +409,7 @@ export default function TreasurerPanelPage() {
             <PDFDownloadLink
               document={
                 <TreasurerLedgerPdf
-                  groupName={groupDetail?.name || "ChamaHub group"}
+                  groupName={groupDetail?.name || "ChamaPulse group"}
                   currency={groupDetail?.currency || "KES"}
                   entries={ledgerEntries}
                 />

@@ -9,8 +9,8 @@ type BrandLogoProps = {
 export default function BrandLogo({ size, className, priority = false }: BrandLogoProps) {
   return (
     <Image
-      src="/chamahub-logo.png"
-      alt="ChamaHub"
+      src="/chamapulse-logo.png"
+      alt="ChamaPulse logo"
       width={size}
       height={size}
       priority={priority}

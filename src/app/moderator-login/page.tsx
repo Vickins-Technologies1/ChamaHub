@@ -55,7 +55,7 @@ function ModeratorLoginContent() {
 
     if (!isModerator) {
       await authClient.signOut();
-      setError("This login is for ChamaHub moderators only.");
+      setError("This login is for ChamaPulse moderators only.");
       setLoading(false);
       return;
     }
@@ -68,9 +68,9 @@ function ModeratorLoginContent() {
   return (
     <AuthShell
       eyebrow="Moderator Login"
-      title="Run your ChamaHub group with confidence."
+      title="Run your ChamaPulse group with confidence."
       subtitle="Manage members, contributions, and payouts from a sleek moderator command center."
-      brandTitle="ChamaHub Moderators"
+      brandTitle="ChamaPulse Moderators"
       brandSubtitle="Coordinate group savings with total visibility."
       brandPoints={[
         "Track rotations, payouts, and member activity.",

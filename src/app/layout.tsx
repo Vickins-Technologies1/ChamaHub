@@ -8,24 +8,25 @@ const instrument = Instrument_Sans({ subsets: ["latin"], display: "swap", variab
 const display = Space_Grotesk({ subsets: ["latin"], display: "swap", variable: "--font-display" });
 
 export const metadata: Metadata = {
-  metadataBase: new URL("https://chamahub.vickinstechnologies.com"),
-  title: { default: "ChamaHub | Savings groups, in sync", template: "%s | ChamaHub" },
-  description: "Manage your savings group’s members, contributions, payouts, meetings and announcements in one organized ChamaHub workspace.",
-  applicationName: "ChamaHub",
-  keywords: ["chama", "savings group", "contributions", "payouts", "group finance", "Kenya"],
+  metadataBase: new URL("https://chamapulse.vickinstechnologies.com"),
+  title: { default: "ChamaPulse | Your Group. One Financial Pulse.", template: "%s | ChamaPulse" },
+  description: "ChamaPulse is a group savings and investment management platform for contributions, payouts, financial records and collective investments.",
+  applicationName: "ChamaPulse",
+  keywords: ["chama management system", "chama software", "chama contribution management", "group savings management software", "investment group management", "savings group platform", "table banking management system", "group financial management", "chama accounting software", "group contributions and payouts"],
+  alternates: { canonical: "/" },
   openGraph: {
     type: "website",
     url: "/",
-    siteName: "ChamaHub",
-    title: "ChamaHub | Savings groups, in sync",
-    description: "Manage members, contributions, payouts and meetings in one organized savings-group workspace.",
-    images: [{ url: "/chamahub-logo.png", width: 1254, height: 1254, alt: "ChamaHub" }],
+    siteName: "ChamaPulse",
+    title: "ChamaPulse | Your Group. One Financial Pulse.",
+    description: "A modern platform for managing savings groups, contributions, payouts and collective investments.",
+    images: [{ url: "/chamapulse-logo.png", width: 1254, height: 1254, alt: "ChamaPulse" }],
   },
   twitter: {
     card: "summary",
-    title: "ChamaHub | Savings groups, in sync",
-    description: "A clear workspace for savings-group members, contributions, payouts and meetings.",
-    images: ["/chamahub-logo.png"],
+    title: "ChamaPulse | Your Group. One Financial Pulse.",
+    description: "A group savings and investment management platform for transparent records and payouts.",
+    images: ["/chamapulse-logo.png"],
   },
   icons: {
     icon: [

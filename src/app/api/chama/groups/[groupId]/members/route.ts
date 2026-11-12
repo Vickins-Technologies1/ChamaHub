@@ -134,16 +134,16 @@ export async function POST(request: NextRequest, { params }: Params) {
           "http://localhost:3000";
         const inviteLink = `${baseUrl}/member-signup?email=${encodeURIComponent(
           email.trim().toLowerCase()
-        )}&groupName=${encodeURIComponent(group?.name ?? "ChamaHub group")}`;
+        )}&groupName=${encodeURIComponent(group?.name ?? "ChamaPulse group")}`;
 
         await transporter.sendMail({
           from: process.env.EMAIL_USER,
           to: email.trim().toLowerCase(),
-          subject: `You're invited to join ${group?.name ?? "a ChamaHub group"}`,
+          subject: `You're invited to join ${group?.name ?? "a ChamaPulse group"}`,
           html: `
             <div style="font-family: Arial, sans-serif; line-height: 1.6; color: #0b1220;">
-              <h2 style="margin: 0 0 12px;">Welcome to ChamaHub</h2>
-              <p>You have been invited to join <strong>${group?.name ?? "a ChamaHub group"}</strong>.</p>
+              <h2 style="margin: 0 0 12px;">Welcome to ChamaPulse</h2>
+              <p>You have been invited to join <strong>${group?.name ?? "a ChamaPulse group"}</strong>.</p>
               <p>Create your member account to view contributions, payments, and payout schedules.</p>
               <p style="margin-top: 18px;">
                 <a href="${inviteLink}" style="background:#1b5cff;color:#fff;padding:12px 18px;border-radius:999px;text-decoration:none;font-weight:600;">

@@ -1,6 +1,8 @@
-# ChamaHub
+# ChamaPulse
 
-ChamaHub is a standalone workspace for rotating savings groups. Moderators and members can manage groups, contributions, meeting calls, attendance, announcements, minutes, and payouts.
+ChamaPulse is a group savings and investment management platform for chamas and table banking groups. Its tagline is “Your Group. One Financial Pulse.” Members and moderators can manage groups, contributions, meeting calls, attendance, announcements, minutes, and payouts.
+
+Production website: https://chamapulse.vickinstechnologies.com/
 
 ## Stack
 
@@ -14,11 +16,11 @@ ChamaHub is a standalone workspace for rotating savings groups. Moderators and m
 1. Install Node.js and pnpm.
 2. Install dependencies with `pnpm install --frozen-lockfile`.
 3. Copy `.env.example` to `.env.local` and set the required values.
-4. Run `pnpm dev` and open http://localhost:3000. The root route opens the workspace at /chama.
+4. Run `pnpm dev` and open http://localhost:3000.
 
 ## Data and accounts
 
-Set `MONGODB_URI` to the MongoDB cluster that contains ChamaHub data. The default database name is `Viuckins101` to keep existing groups and accounts available. Set `CHAMAHUB_MONGODB_DB` to a new database only after migrating the ChamaHub collections. Use a unique `BETTER_AUTH_SECRET` and configure `BETTER_AUTH_BASE_URL` and `NEXT_PUBLIC_SITE_URL` for each deployment.
+Set `MONGODB_URI` to the MongoDB cluster that contains existing group data. The default database name is `Viuckins101`; retain it to keep existing groups and accounts available. Keep the existing `CHAMAHUB_MONGODB_DB` variable name for compatibility. Use a unique `BETTER_AUTH_SECRET`; set `BETTER_AUTH_BASE_URL` and `NEXT_PUBLIC_SITE_URL` to `https://chamapulse.vickinstechnologies.com` in the production deployment. Local development continues to use `http://localhost:3000`.
 
 ## Notifications and attendance
 

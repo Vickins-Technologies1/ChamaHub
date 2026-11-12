@@ -49,7 +49,7 @@ const buildEmail = (kind: NotificationKind, params: { groupName: string; title: 
               : ""
           }
           <p style="font-size: 12px; color: #5a6882; margin-top: 16px;">
-            Sent by <a href="${baseUrl}" style="color:#1b5cff;text-decoration:none;">ChamaHub</a>.
+            Sent by <a href="${baseUrl}" style="color:#1b5cff;text-decoration:none;">ChamaPulse</a>.
           </p>
         </div>
       `,
@@ -72,7 +72,7 @@ const buildEmail = (kind: NotificationKind, params: { groupName: string; title: 
             : ""
         }
         <p style="font-size: 12px; color: #5a6882; margin-top: 16px;">
-          Sent by <a href="${baseUrl}" style="color:#1b5cff;text-decoration:none;">ChamaHub</a>.
+          Sent by <a href="${baseUrl}" style="color:#1b5cff;text-decoration:none;">ChamaPulse</a>.
         </p>
       </div>
     `,
@@ -100,7 +100,7 @@ export const notifyGroupCallMembers = async (input: {
     ChamaMemberModel.find({ groupId: input.groupId, status: { $ne: "rejected" } }).lean(),
   ]);
 
-  const groupName = (group && typeof group === "object" && "name" in group ? String((group as { name?: string }).name || "") : "") || "ChamaHub group";
+  const groupName = (group && typeof group === "object" && "name" in group ? String((group as { name?: string }).name || "") : "") || "ChamaPulse group";
 
   const recipients = members
     .map((m) => ({

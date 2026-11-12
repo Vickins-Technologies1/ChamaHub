@@ -48,7 +48,7 @@ export default function ChamaLayout({ children }: { children: React.ReactNode })
   }, [session?.user]);
 
   if (isPending) {
-    return <PremiumDashboardShellLoader tone="emerald" label="Loading your ChamaHub space..." />;
+    return <PremiumDashboardShellLoader tone="emerald" label="Loading your ChamaPulse space..." />;
   }
 
   if (!session?.user) {
@@ -57,11 +57,11 @@ export default function ChamaLayout({ children }: { children: React.ReactNode })
         <div className="glass-panel p-6 sm:p-8 max-w-lg text-center space-y-4">
           <div className="inline-flex items-center gap-2 text-xs uppercase tracking-[0.3em] text-[var(--accent-2)]">
             <Sparkles size={16} />
-            ChamaHub Access
+            ChamaPulse Access
           </div>
-          <h2 className="text-2xl font-semibold">Sign in to manage your ChamaHub group</h2>
+          <h2 className="text-2xl font-semibold">Sign in to manage your ChamaPulse group</h2>
           <p className="text-sm text-[var(--muted)]">
-            Please log in to view your ChamaHub dashboard and member activity.
+            Please log in to view your ChamaPulse dashboard and member activity.
           </p>
           <div className="flex flex-col sm:flex-row items-center justify-center gap-3">
             <Link
@@ -107,9 +107,9 @@ export default function ChamaLayout({ children }: { children: React.ReactNode })
 
   return (
     <AdminLteShell
-      appName="ChamaHub"
+      appName="ChamaPulse"
       appHref="/chama"
-      headerKicker="ChamaHub Workspace"
+      headerKicker="ChamaPulse Workspace"
       navSections={[{ label: "Workspace", items: filteredNav }]}
       quickActions={
         isModerator

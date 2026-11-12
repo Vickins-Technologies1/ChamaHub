@@ -322,7 +322,7 @@ export default function SecretaryPanelPage() {
         </p>
         <h1 className="text-2xl font-semibold">No secretary access yet</h1>
         <p className="text-sm text-[var(--muted)]">
-          Ask your moderator to assign you the secretary role inside a ChamaHub group.
+          Ask your moderator to assign you the secretary role inside a ChamaPulse group.
         </p>
         <Link
           href="/chama/groups"

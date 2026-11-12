@@ -47,7 +47,7 @@ type GroupRow = {
 
 const inputClass = "glass-input";
 
-export default function ChamaHubAdminPage() {
+export default function ChamaPulseAdminPage() {
   const [metrics, setMetrics] = useState<Metrics | null>(null);
   const [groups, setGroups] = useState<GroupRow[]>([]);
   const [initialLoading, setInitialLoading] = useState(true);
@@ -73,7 +73,7 @@ export default function ChamaHubAdminPage() {
     try {
       const response = await fetch("/api/admin/chamahub", { cache: "no-store", signal });
       const data = await response.json();
-      if (!response.ok) throw new Error(data?.error || "Unable to load ChamaHub analytics.");
+      if (!response.ok) throw new Error(data?.error || "Unable to load ChamaPulse analytics.");
       setMetrics(data.metrics ?? null);
       setGroups(data.groups ?? []);
     } catch (err) {
@@ -151,7 +151,7 @@ export default function ChamaHubAdminPage() {
           <div>
             <p className="inline-flex items-center gap-2 text-xs sm:text-sm uppercase tracking-[0.3em] text-[var(--button-bg)]">
               <Sparkles size={16} />
-              ChamaHub Analytics
+              ChamaPulse Analytics
             </p>
             <h1 className="text-2xl sm:text-3xl lg:text-4xl font-semibold mt-3">
               Monitor group performance and member activity.
@@ -172,7 +172,7 @@ export default function ChamaHubAdminPage() {
               href="/chama"
               className="inline-flex items-center gap-2 px-5 py-3 rounded-full border border-[var(--glass-border)] bg-white/60 text-[var(--foreground)] text-sm font-semibold hover:bg-[var(--hover-bg)] transition"
             >
-              View ChamaHub
+              View ChamaPulse
             </Link>
           </div>
         </div>
@@ -220,7 +220,7 @@ export default function ChamaHubAdminPage() {
         <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
           <div>
             <p className="text-xs uppercase tracking-[0.3em] text-[var(--muted)]">Group management</p>
-            <h2 className="text-xl sm:text-2xl font-semibold mt-2">ChamaHub groups</h2>
+            <h2 className="text-xl sm:text-2xl font-semibold mt-2">ChamaPulse groups</h2>
             <p className="text-sm text-[var(--muted)] mt-2">
               View leased groups, member counts, and collection progress.
             </p>

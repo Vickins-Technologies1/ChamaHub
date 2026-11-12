@@ -197,7 +197,7 @@ export default function AdminLteShell({
             <LogOut size={16} />
             <span className={sidebarOpen ? "" : "hidden"}>Sign out</span>
           </button>
-          <p className={sidebarOpen ? "dash-footer-note" : "hidden"}>© 2026 ChamaHub</p>
+          <p className={sidebarOpen ? "dash-footer-note" : "hidden"}>© 2026 ChamaPulse</p>
         </div>
       </aside>
 

@@ -30,7 +30,7 @@ export const deliverAnnouncement = async (input: {
     ChamaMemberModel.find({ groupId: input.groupId, status: "active" }).lean(),
   ]);
   const group = Array.isArray(groupResult) ? groupResult[0] : groupResult;
-  const groupName = group?.name || "your ChamaHub group";
+  const groupName = group?.name || "your ChamaPulse group";
   const safeTitle = escapeHtml(input.title);
   const safeMessage = escapeHtml(input.message).replace(/\n/g, "<br />");
   const canUseSms = channels.has("sms") && canSendSms();
@@ -45,7 +45,7 @@ export const deliverAnnouncement = async (input: {
           from: process.env.EMAIL_USER,
           to: member.email,
           subject: `${groupName}: ${input.title}`,
-          html: `<div style="font-family:Arial,sans-serif;line-height:1.6;color:#0b1220"><h2>${safeTitle}</h2><p>${safeMessage}</p><p style="font-size:12px;color:#5a6882">Sent by ChamaHub for ${escapeHtml(groupName)}.</p></div>`,
+          html: `<div style="font-family:Arial,sans-serif;line-height:1.6;color:#0b1220"><h2>${safeTitle}</h2><p>${safeMessage}</p><p style="font-size:12px;color:#5a6882">Sent by ChamaPulse for ${escapeHtml(groupName)}.</p></div>`,
         });
         email = 1;
       }
