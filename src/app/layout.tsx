@@ -8,8 +8,25 @@ const instrument = Instrument_Sans({ subsets: ["latin"], display: "swap", variab
 const display = Space_Grotesk({ subsets: ["latin"], display: "swap", variable: "--font-display" });
 
 export const metadata: Metadata = {
-  title: { default: "ChamaHub", template: "%s | ChamaHub" },
-  description: "Manage chama groups, contributions, meetings, and payouts with ChamaHub.",
+  metadataBase: new URL("https://chamahub.vickinstechnologies.com"),
+  title: { default: "ChamaHub | Savings groups, in sync", template: "%s | ChamaHub" },
+  description: "Manage your savings group’s members, contributions, payouts, meetings and announcements in one organized ChamaHub workspace.",
+  applicationName: "ChamaHub",
+  keywords: ["chama", "savings group", "contributions", "payouts", "group finance", "Kenya"],
+  openGraph: {
+    type: "website",
+    url: "/",
+    siteName: "ChamaHub",
+    title: "ChamaHub | Savings groups, in sync",
+    description: "Manage members, contributions, payouts and meetings in one organized savings-group workspace.",
+    images: [{ url: "/chamahub-logo.png", width: 1254, height: 1254, alt: "ChamaHub" }],
+  },
+  twitter: {
+    card: "summary",
+    title: "ChamaHub | Savings groups, in sync",
+    description: "A clear workspace for savings-group members, contributions, payouts and meetings.",
+    images: ["/chamahub-logo.png"],
+  },
   icons: {
     icon: [
       { url: "/favicon-16.png", sizes: "16x16", type: "image/png" },
