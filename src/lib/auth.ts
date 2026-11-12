@@ -5,10 +5,20 @@ import { admin } from "better-auth/plugins";
 import connectToDatabase from "@/lib/mongodb";
 import transporter from "@/lib/nodemailer";
 
-const getSiteUrl = () =>
-  process.env.BETTER_AUTH_BASE_URL ||
-  process.env.NEXT_PUBLIC_SITE_URL ||
-  (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : "http://localhost:3000");
+const PRODUCTION_SITE_URL = "https://chamahub.vickinstechnologies.com";
+
+const getSiteUrl = () => {
+  const configuredUrl =
+    process.env.BETTER_AUTH_BASE_URL ||
+    process.env.NEXT_PUBLIC_SITE_URL ||
+    (process.env.VERCEL_PROJECT_PRODUCTION_URL
+      ? `https://${process.env.VERCEL_PROJECT_PRODUCTION_URL}`
+      : null) ||
+    (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : null) ||
+    (process.env.NODE_ENV === "production" ? PRODUCTION_SITE_URL : "http://localhost:3000");
+
+  return configuredUrl.replace(/\/$/, "");
+};
 
 async function createAuth() {
   const db = await connectToDatabase();
@@ -48,8 +58,12 @@ async function createAuth() {
     baseURL: getSiteUrl(),
     trustedOrigins: [
       "http://localhost:3000",
+      PRODUCTION_SITE_URL,
       process.env.NEXT_PUBLIC_SITE_URL,
       process.env.BETTER_AUTH_BASE_URL,
+      process.env.VERCEL_PROJECT_PRODUCTION_URL
+        ? `https://${process.env.VERCEL_PROJECT_PRODUCTION_URL}`
+        : undefined,
       process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : undefined,
     ].filter(Boolean) as string[],
     // Optional: enable if deploying on Vercel/Netlify/etc.
