@@ -58,6 +58,7 @@ export async function POST(request: Request) {
       contributionAmount: Number(contributionAmount),
       frequency: normalizeFrequency(frequency),
       numberOfMembers: Number(numberOfMembers) || 1,
+      expectedMemberCount: Math.max(1, Number(numberOfMembers) || 1),
       startDate: new Date(startDate),
       currency: currency?.trim() || "KES",
       createdBy: createdUser.id,
@@ -91,7 +92,14 @@ export async function POST(request: Request) {
       startedAt: new Date(startDate),
     });
 
-    return NextResponse.json({ groupId: String(group._id), userId: createdUser.id }, { status: 201 });
+    return NextResponse.json(
+      {
+        groupId: String(group._id),
+        userId: createdUser.id,
+        requiresEmailVerification: Boolean(process.env.EMAIL_USER && process.env.EMAIL_PASS),
+      },
+      { status: 201 }
+    );
   } catch (error) {
     const message =
       error instanceof Error ? error.message : "Failed to create moderator user.";

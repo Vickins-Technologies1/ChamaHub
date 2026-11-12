@@ -265,7 +265,7 @@ export async function PATCH(request: Request) {
       const sendResults = await Promise.all(
         members.map(async (member) => {
           const recipient = member.email?.toLowerCase();
-          if (!recipient) return false;
+          if (!recipient || !transporter) return false;
           const inviteLink = `${baseUrl}/member-signup?email=${encodeURIComponent(
             recipient
           )}&groupName=${encodeURIComponent(group.name ?? "ChamaHub group")}`;

@@ -115,14 +115,14 @@ export async function POST(request: NextRequest, { params }: Params) {
 
     const activeCount = await ChamaMemberModel.countDocuments({
       groupId,
-      status: { $ne: "rejected" },
+      status: "active",
     });
     await ChamaGroupModel.updateOne(
       { _id: groupId },
       { $set: { numberOfMembers: activeCount } }
     );
 
-    if (email) {
+    if (email && transporter) {
       try {
         const group = (await ChamaGroupModel.findById(groupId).lean()) as
           | { name?: string }

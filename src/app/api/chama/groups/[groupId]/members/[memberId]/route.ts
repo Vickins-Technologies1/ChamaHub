@@ -28,11 +28,15 @@ export async function PATCH(request: NextRequest, { params }: Params) {
 
     const isAdmin = isSiteAdmin(user);
     const requester = await getGroupMember(groupId, user);
-    const canManage =
-      isAdmin || hasGroupRole(requester, ["admin", "treasurer", "secretary"]);
+    const canManage = isAdmin || hasGroupRole(requester, ["admin", "treasurer", "secretary"]);
 
     const body = await request.json().catch(() => ({}));
     const updates: Record<string, unknown> = {};
+
+    const member = await ChamaMemberModel.findOne({ _id: memberId, groupId });
+    if (!member) {
+      return NextResponse.json({ error: "Member not found in this group." }, { status: 404 });
+    }
 
     if (body.role && ["admin", "treasurer", "secretary", "member"].includes(body.role)) {
       if (!canManage) {
@@ -42,16 +46,7 @@ export async function PATCH(request: NextRequest, { params }: Params) {
     }
 
     if (body.status && ["active", "pending", "rejected"].includes(body.status)) {
-      const member = await ChamaMemberModel.findById(memberId);
-      if (!member) {
-        return NextResponse.json({ error: "Member not found." }, { status: 404 });
-      }
-
-      const isSelf =
-        member.userId === user.id ||
-        (user.email && member.email === user.email.toLowerCase());
-
-      if (!canManage && !isSelf) {
+      if (!canManage) {
         return NextResponse.json({ error: "Access denied." }, { status: 403 });
       }
 
@@ -60,7 +55,7 @@ export async function PATCH(request: NextRequest, { params }: Params) {
         updates.joinedAt = new Date();
       }
 
-      await ChamaMemberModel.updateOne({ _id: memberId }, { $set: updates });
+      await ChamaMemberModel.updateOne({ _id: memberId, groupId }, { $set: updates });
 
       const group = await ChamaGroupModel.findById(groupId);
       if (group) {
@@ -79,7 +74,7 @@ export async function PATCH(request: NextRequest, { params }: Params) {
 
       const activeCount = await ChamaMemberModel.countDocuments({
         groupId,
-        status: { $ne: "rejected" },
+        status: "active",
       });
       await ChamaGroupModel.updateOne(
         { _id: groupId },
@@ -93,7 +88,7 @@ export async function PATCH(request: NextRequest, { params }: Params) {
       return NextResponse.json({ error: "No updates provided." }, { status: 400 });
     }
 
-    await ChamaMemberModel.updateOne({ _id: memberId }, { $set: updates });
+    await ChamaMemberModel.updateOne({ _id: memberId, groupId }, { $set: updates });
     return NextResponse.json({ ok: true });
   } catch (error) {
     return NextResponse.json({ error: "Unable to update member." }, { status: 500 });
@@ -120,7 +115,12 @@ export async function DELETE(request: NextRequest, { params }: Params) {
       return NextResponse.json({ error: "Access denied." }, { status: 403 });
     }
 
-    await ChamaMemberModel.deleteOne({ _id: memberId });
+    const target = await ChamaMemberModel.findOne({ _id: memberId, groupId }).lean();
+    if (!target) {
+      return NextResponse.json({ error: "Member not found in this group." }, { status: 404 });
+    }
+
+    await ChamaMemberModel.deleteOne({ _id: memberId, groupId });
 
     const group = await ChamaGroupModel.findById(groupId);
     if (group) {
@@ -132,7 +132,7 @@ export async function DELETE(request: NextRequest, { params }: Params) {
 
     const activeCount = await ChamaMemberModel.countDocuments({
       groupId,
-      status: { $ne: "rejected" },
+      status: "active",
     });
     await ChamaGroupModel.updateOne(
       { _id: groupId },

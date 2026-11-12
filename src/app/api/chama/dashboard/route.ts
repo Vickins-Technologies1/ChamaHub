@@ -25,11 +25,11 @@ export async function GET() {
 
     const members = await ChamaMemberModel.find({
       $or: orConditions,
-      status: { $ne: "rejected" },
+      status: "active",
     }).lean();
 
     const groupIds = members.map((member) => member.groupId);
-    const groups = await ChamaGroupModel.find({ _id: { $in: groupIds } }).lean();
+    const groups = await ChamaGroupModel.find({ _id: { $in: groupIds }, status: "active" }).lean();
     const rounds = await ChamaRoundModel.find({
       groupId: { $in: groupIds },
       status: "open",

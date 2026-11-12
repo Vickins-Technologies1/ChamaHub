@@ -4,7 +4,6 @@ import { connectMongoose } from "@/lib/mongoose";
 import {
   getSessionUser,
   getGroupMember,
-  isModerator,
   isSiteAdmin,
 } from "@/lib/chama-access";
 import ChamaCallAttendanceModel from "@/lib/models/chama-call-attendance";
@@ -27,9 +26,8 @@ export async function GET(request: NextRequest, { params }: Params) {
     await connectMongoose();
 
     const isAdmin = isSiteAdmin(user);
-    const moderator = isModerator(user);
     const member = await getGroupMember(groupId, user);
-    if (!isAdmin && !moderator && !member) {
+    if (!isAdmin && !member) {
       return NextResponse.json({ error: "Access denied." }, { status: 403 });
     }
 

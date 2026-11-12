@@ -1,7 +1,9 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { connectMongoose } from "@/lib/mongoose";
 import ChamaCallModel from "@/lib/models/chama-call";
+import ChamaAnnouncementModel from "@/lib/models/chama-announcement";
 import { notifyGroupCallMembers } from "@/lib/chama-call-notifications";
+import { deliverAnnouncement } from "@/lib/chama-announcement-notifications";
 
 const getAuthToken = (request: NextRequest) => {
   const header = request.headers.get("authorization");
@@ -45,6 +47,7 @@ export async function GET(request: NextRequest) {
   let startingProcessed = 0;
   let scheduledDelivered = 0;
   let startingDelivered = 0;
+  let announcementsDelivered = 0;
 
   for (const call of scheduledBackfill) {
     scheduledProcessed += 1;
@@ -92,6 +95,30 @@ export async function GET(request: NextRequest) {
     }
   }
 
+  const scheduledAnnouncements = await ChamaAnnouncementModel.find({
+    scheduledFor: { $lte: now },
+    deliveredAt: { $exists: false },
+  })
+    .sort({ scheduledFor: 1 })
+    .limit(25);
+
+  for (const announcement of scheduledAnnouncements) {
+    try {
+      const delivery = await deliverAnnouncement({
+        groupId: String(announcement.groupId),
+        title: announcement.title,
+        message: announcement.message,
+        deliveryChannels: announcement.deliveryChannels as Array<"in-app" | "email" | "sms">,
+      });
+      announcement.deliveredAt = now;
+      announcement.deliverySummary = delivery;
+      await announcement.save();
+      announcementsDelivered += 1;
+    } catch {
+      // Leave it pending so a later job run can retry delivery.
+    }
+  }
+
   return NextResponse.json({
     scheduled: {
       processed: scheduledProcessed,
@@ -100,6 +127,10 @@ export async function GET(request: NextRequest) {
     starting: {
       processed: startingProcessed,
       delivered: startingDelivered,
+    },
+    announcements: {
+      processed: scheduledAnnouncements.length,
+      delivered: announcementsDelivered,
     },
     ranAt: now.toISOString(),
   });

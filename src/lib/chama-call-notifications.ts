@@ -130,7 +130,7 @@ export const notifyGroupCallMembers = async (input: {
     recipients.map(async (recipient) => {
       let emailed = 0;
       let sms = 0;
-      if (recipient.email) {
+      if (recipient.email && transporter) {
         try {
           await transporter.sendMail({
             from: process.env.EMAIL_USER,

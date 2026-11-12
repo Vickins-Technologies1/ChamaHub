@@ -5,6 +5,10 @@ import ChamaGroupModel from "@/lib/models/chama-group";
 import ChamaMemberModel from "@/lib/models/chama-member";
 import ChamaRoundModel from "@/lib/models/chama-round";
 import ChamaContributionModel from "@/lib/models/chama-contribution";
+import ChamaCallModel from "@/lib/models/chama-call";
+import ChamaCallAttendanceModel from "@/lib/models/chama-call-attendance";
+import ChamaMinutesModel from "@/lib/models/chama-minutes";
+import ChamaAnnouncementModel from "@/lib/models/chama-announcement";
 import {
   getSessionUser,
   getGroupMember,
@@ -194,6 +198,10 @@ export async function DELETE(request: NextRequest, { params }: Params) {
       ChamaMemberModel.deleteMany({ groupId: group._id }),
       ChamaRoundModel.deleteMany({ groupId: group._id }),
       ChamaContributionModel.deleteMany({ groupId: group._id }),
+      ChamaCallModel.deleteMany({ groupId: group._id }),
+      ChamaCallAttendanceModel.deleteMany({ groupId: group._id }),
+      ChamaMinutesModel.deleteMany({ groupId: group._id }),
+      ChamaAnnouncementModel.deleteMany({ groupId: group._id }),
     ]);
 
     return NextResponse.json({ ok: true });

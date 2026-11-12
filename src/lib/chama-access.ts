@@ -53,6 +53,7 @@ export const getGroupMember = async (groupId: string, user: SessionUser) => {
   }
   const query = {
     groupId: new Types.ObjectId(groupId),
+    status: "active",
     $or: orConditions,
   };
   return (await ChamaMemberModel.findOne(query).lean()) as
@@ -67,10 +68,10 @@ export const getGroupMember = async (groupId: string, user: SessionUser) => {
 };
 
 export const hasGroupRole = (
-  member: { role?: string | null } | null,
+  member: { role?: string | null; status?: string | null } | null,
   roles: Array<"admin" | "treasurer" | "secretary">
 ) => {
-  if (!member?.role) return false;
+  if (!member?.role || member.status !== "active") return false;
   return roles.includes(member.role as "admin" | "treasurer" | "secretary");
 };
 

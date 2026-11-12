@@ -2,11 +2,13 @@ import { NextResponse, type NextRequest } from "next/server";
 import { Types } from "mongoose";
 import { connectMongoose } from "@/lib/mongoose";
 import ChamaAnnouncementModel from "@/lib/models/chama-announcement";
+import { deliverAnnouncement } from "@/lib/chama-announcement-notifications";
+import transporter from "@/lib/nodemailer";
+import { canSendSms } from "@/lib/sms";
 import {
   getSessionUser,
   getGroupMember,
   hasGroupRole,
-  isModerator,
   isSiteAdmin,
 } from "@/lib/chama-access";
 
@@ -27,9 +29,8 @@ export async function GET(request: NextRequest, { params }: Params) {
     await connectMongoose();
 
     const isAdmin = isSiteAdmin(user);
-    const moderator = isModerator(user);
     const member = await getGroupMember(groupId, user);
-    if (!isAdmin && !moderator && !member) {
+    if (!isAdmin && !member) {
       return NextResponse.json({ error: "Access denied." }, { status: 403 });
     }
 
@@ -68,9 +69,8 @@ export async function POST(request: NextRequest, { params }: Params) {
     await connectMongoose();
 
     const isAdmin = isSiteAdmin(user);
-    const moderator = isModerator(user);
     const member = await getGroupMember(groupId, user);
-    const canCreate = isAdmin || moderator || hasGroupRole(member, ["admin", "secretary"]);
+    const canCreate = isAdmin || hasGroupRole(member, ["admin", "secretary"]);
     if (!canCreate) {
       return NextResponse.json({ error: "Access denied." }, { status: 403 });
     }
@@ -93,6 +93,13 @@ export async function POST(request: NextRequest, { params }: Params) {
       : [];
     const uniqueChannels = Array.from(new Set(["in-app", ...normalizedChannels]));
 
+    if (uniqueChannels.includes("email") && !transporter) {
+      return NextResponse.json({ error: "Email delivery is unavailable until email settings are configured." }, { status: 400 });
+    }
+    if (uniqueChannels.includes("sms") && !canSendSms()) {
+      return NextResponse.json({ error: "SMS delivery is unavailable until Twilio settings are configured." }, { status: 400 });
+    }
+
     let scheduleDate: Date | undefined;
     if (scheduledFor) {
       const parsed = new Date(String(scheduledFor));
@@ -110,6 +117,18 @@ export async function POST(request: NextRequest, { params }: Params) {
       scheduledFor: scheduleDate,
       createdBy: user.id,
     });
+
+    if (!scheduleDate || scheduleDate.getTime() <= Date.now()) {
+      const delivery = await deliverAnnouncement({
+        groupId,
+        title: announcement.title,
+        message: announcement.message,
+        deliveryChannels: uniqueChannels as Array<"in-app" | "email" | "sms">,
+      });
+      announcement.deliveredAt = new Date();
+      announcement.deliverySummary = delivery;
+      await announcement.save();
+    }
 
     return NextResponse.json({ id: String(announcement._id) }, { status: 201 });
   } catch (error) {

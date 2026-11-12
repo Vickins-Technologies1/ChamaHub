@@ -5,7 +5,7 @@ import { authClient } from "@/lib/auth-client";
 import { Suspense, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
-import { ArrowRight } from "lucide-react";
+import { ArrowRight, Eye, EyeOff } from "lucide-react";
 import AuthShell from "@/components/AuthShell";
 
 const inputClass =
@@ -18,6 +18,7 @@ function MemberLoginContent() {
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
 
   const callbackUrl = useMemo(() => searchParams.get("callbackUrl") ?? "/chama", [searchParams]);
   const safeCallback = useMemo(() => {
@@ -88,14 +89,7 @@ function MemberLoginContent() {
           className={inputClass}
         />
 
-        <input
-          type="password"
-          placeholder="Password"
-          value={password}
-          onChange={(e) => setPassword(e.target.value)}
-          required
-          className={inputClass}
-        />
+        <div className="relative"><input type={showPassword ? "text" : "password"} placeholder="Password" value={password} onChange={(e) => setPassword(e.target.value)} required className={`${inputClass} pr-12`} /><button type="button" onClick={() => setShowPassword((value) => !value)} aria-label={showPassword ? "Hide password" : "Show password"} className="absolute right-3 top-1/2 -translate-y-1/2 text-[var(--muted)] hover:text-[var(--button-bg)]">{showPassword ? <EyeOff size={18} /> : <Eye size={18} />}</button></div>
 
         <button
           type="submit"
@@ -116,10 +110,7 @@ function MemberLoginContent() {
         <Link href="/member-signup" className="text-[var(--button-bg)] font-semibold hover:underline">
           Create a member account
         </Link>
-        <Link href="/moderator-login" className="inline-flex items-center gap-2 hover:underline">
-          Moderator login
-          <ArrowRight size={14} />
-        </Link>
+        <div className="flex items-center gap-4"><Link href="/forgot-password" className="hover:text-[var(--button-bg)] hover:underline">Forgot password?</Link><Link href="/moderator-login" className="inline-flex items-center gap-2 hover:underline">Moderator login <ArrowRight size={14} /></Link></div>
       </div>
     </AuthShell>
   );

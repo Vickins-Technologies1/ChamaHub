@@ -83,10 +83,7 @@ export async function POST(request: NextRequest, { params }: Params) {
       | null;
 
     const body = await request.json().catch(() => ({}));
-    const { roundId, memberId, amount, method, reference, paidAt } = body as Record<
-      string,
-      string
-    >;
+    const { roundId, memberId, amount, method, reference, paidAt } = body as Record<string, string>;
 
     if (!roundId || !memberId || !amount) {
       return NextResponse.json(
@@ -99,11 +96,26 @@ export async function POST(request: NextRequest, { params }: Params) {
       return NextResponse.json({ error: "Invalid ids." }, { status: 400 });
     }
 
-    const member = (await ChamaMemberModel.findById(memberId).lean()) as
-      | { userId?: string; email?: string | null }
+    const member = (await ChamaMemberModel.findOne({ _id: memberId, groupId, status: "active" }).lean()) as
+      | { userId?: string; email?: string | null; groupId?: unknown }
       | null;
     if (!member) {
-      return NextResponse.json({ error: "Member not found." }, { status: 404 });
+      return NextResponse.json({ error: "Active member not found in this group." }, { status: 404 });
+    }
+
+    const round = await ChamaRoundModel.findOne({ _id: roundId, groupId, status: "open" }).lean();
+    if (!round) {
+      return NextResponse.json({ error: "Open round not found in this group." }, { status: 404 });
+    }
+
+    const parsedAmount = Number(amount);
+    if (!Number.isFinite(parsedAmount) || parsedAmount <= 0) {
+      return NextResponse.json({ error: "Amount must be a positive number." }, { status: 400 });
+    }
+
+    const paymentDate = paidAt ? new Date(paidAt) : new Date();
+    if (Number.isNaN(paymentDate.getTime())) {
+      return NextResponse.json({ error: "Invalid payment date." }, { status: 400 });
     }
 
     const isSelf =
@@ -118,11 +130,11 @@ export async function POST(request: NextRequest, { params }: Params) {
       groupId,
       roundId,
       memberId,
-      amount: Number(amount),
+      amount: parsedAmount,
       status: "paid",
       method: method?.trim() || "manual",
       reference: reference?.trim() || "",
-      paidAt: paidAt ? new Date(paidAt) : new Date(),
+      paidAt: paymentDate,
     });
 
     const total = await ChamaContributionModel.aggregate([

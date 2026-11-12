@@ -42,7 +42,10 @@ export async function POST(request: Request) {
       role: "member",
     });
 
-    return NextResponse.json({ user: { ...createdUser, role: "member" } });
+    return NextResponse.json({
+      user: { ...createdUser, role: "member" },
+      requiresEmailVerification: Boolean(process.env.EMAIL_USER && process.env.EMAIL_PASS),
+    });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Failed to create member user.";
     return NextResponse.json({ error: message }, { status: 400 });

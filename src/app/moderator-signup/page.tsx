@@ -4,7 +4,7 @@
 import { useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { ArrowRight, Users, Wallet } from "lucide-react";
+import { ArrowRight, Eye, EyeOff, Users, Wallet } from "lucide-react";
 import { authClient } from "@/lib/auth-client";
 import AuthShell from "@/components/AuthShell";
 
@@ -27,6 +27,7 @@ export default function ModeratorSignupPage() {
   });
   const [status, setStatus] = useState<"idle" | "loading" | "success" | "error">("idle");
   const [message, setMessage] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
 
   const handleSubmit = async (event: React.FormEvent) => {
     event.preventDefault();
@@ -46,6 +47,12 @@ export default function ModeratorSignupPage() {
       const data = await response.json();
       if (!response.ok) {
         throw new Error(data?.error ?? "Failed to create moderator account.");
+      }
+
+      if (data?.requiresEmailVerification) {
+        setStatus("success");
+        setMessage("Check your email to verify your account, then sign in to set up your group.");
+        return;
       }
 
       const { error } = await authClient.signIn.email({
@@ -98,14 +105,7 @@ export default function ModeratorSignupPage() {
             onChange={(event) => setForm((prev) => ({ ...prev, email: event.target.value }))}
             required
           />
-          <input
-            className={inputClass}
-            type="password"
-            placeholder="Password"
-            value={form.password}
-            onChange={(event) => setForm((prev) => ({ ...prev, password: event.target.value }))}
-            required
-          />
+          <div className="relative"><input className={`${inputClass} pr-12`} type={showPassword ? "text" : "password"} placeholder="Password (at least 8 characters)" value={form.password} onChange={(event) => setForm((prev) => ({ ...prev, password: event.target.value }))} minLength={8} required /><button type="button" aria-label={showPassword ? "Hide password" : "Show password"} onClick={() => setShowPassword((value) => !value)} className="absolute right-3 top-1/2 -translate-y-1/2 text-[var(--muted)]">{showPassword ? <EyeOff size={18} /> : <Eye size={18} />}</button></div>
           <input
             className={inputClass}
             placeholder="Chama group name"

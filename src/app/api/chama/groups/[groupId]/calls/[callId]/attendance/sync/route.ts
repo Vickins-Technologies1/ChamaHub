@@ -8,7 +8,6 @@ import {
   getSessionUser,
   getGroupMember,
   hasGroupRole,
-  isModerator,
   isSiteAdmin,
 } from "@/lib/chama-access";
 import {
@@ -41,9 +40,8 @@ export async function POST(request: NextRequest, { params }: Params) {
     await connectMongoose();
 
     const isAdmin = isSiteAdmin(user);
-    const moderator = isModerator(user);
     const member = await getGroupMember(groupId, user);
-    const canSync = isAdmin || moderator || hasGroupRole(member, ["admin", "secretary"]);
+    const canSync = isAdmin || hasGroupRole(member, ["admin", "secretary"]);
     if (!canSync) {
       return NextResponse.json({ error: "Access denied." }, { status: 403 });
     }

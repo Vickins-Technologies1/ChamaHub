@@ -4,7 +4,7 @@
 import { useState, Suspense } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { ArrowRight } from "lucide-react";
+import { ArrowRight, Eye, EyeOff } from "lucide-react";
 import { authClient } from "@/lib/auth-client";
 import AuthShell from "@/components/AuthShell";
 
@@ -24,6 +24,7 @@ function MemberSignupContent() {
   });
   const [status, setStatus] = useState<"idle" | "loading" | "success" | "error">("idle");
   const [message, setMessage] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
 
   const handleSubmit = async (event: React.FormEvent) => {
     event.preventDefault();
@@ -43,6 +44,12 @@ function MemberSignupContent() {
       const data = await response.json();
       if (!response.ok) {
         throw new Error(data?.error ?? "Failed to create member account.");
+      }
+
+      if (data?.requiresEmailVerification) {
+        setStatus("success");
+        setMessage("Check your email to verify your account, then sign in to join your group.");
+        return;
       }
 
       const { error } = await authClient.signIn.email({
@@ -98,14 +105,7 @@ function MemberSignupContent() {
           onChange={(event) => setForm((prev) => ({ ...prev, email: event.target.value }))}
           required
         />
-        <input
-          className={inputClass}
-          type="password"
-          placeholder="Password"
-          value={form.password}
-          onChange={(event) => setForm((prev) => ({ ...prev, password: event.target.value }))}
-          required
-        />
+        <div className="relative"><input className={`${inputClass} pr-12`} type={showPassword ? "text" : "password"} placeholder="Password (at least 8 characters)" value={form.password} onChange={(event) => setForm((prev) => ({ ...prev, password: event.target.value }))} minLength={8} required /><button type="button" aria-label={showPassword ? "Hide password" : "Show password"} onClick={() => setShowPassword((value) => !value)} className="absolute right-3 top-1/2 -translate-y-1/2 text-[var(--muted)]">{showPassword ? <EyeOff size={18} /> : <Eye size={18} />}</button></div>
         <button
           type="submit"
           disabled={status === "loading"}

@@ -25,7 +25,7 @@ export async function GET() {
       groups = await ChamaGroupModel.find().sort({ createdAt: -1 }).lean();
       memberRecords = await ChamaMemberModel.find({
         groupId: { $in: groups.map((group) => group._id) },
-        status: { $ne: "rejected" },
+        status: "active",
       }).lean();
     } else {
       const orConditions: Record<string, unknown>[] = [{ userId: user.id }];
@@ -34,7 +34,7 @@ export async function GET() {
       }
       memberRecords = await ChamaMemberModel.find({
         $or: orConditions,
-        status: { $ne: "rejected" },
+        status: "active",
       }).lean();
 
       const groupIds = memberRecords.map((member) => member.groupId);
@@ -140,6 +140,7 @@ export async function POST(request: Request) {
       contributionAmount: Number(contributionAmount),
       frequency: normalizeFrequency(frequency),
       numberOfMembers: Number(numberOfMembers) || 1,
+      expectedMemberCount: Math.max(1, Number(numberOfMembers) || 1),
       startDate: new Date(startDate),
       currency: currency?.trim() || "KES",
       createdBy: user.id,

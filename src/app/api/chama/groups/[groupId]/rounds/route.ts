@@ -4,6 +4,7 @@ import { connectMongoose } from "@/lib/mongoose";
 import ChamaGroupModel from "@/lib/models/chama-group";
 import ChamaMemberModel from "@/lib/models/chama-member";
 import ChamaRoundModel from "@/lib/models/chama-round";
+import ChamaContributionModel from "@/lib/models/chama-contribution";
 import {
   getSessionUser,
   getGroupMember,
@@ -91,16 +92,18 @@ export async function POST(request: NextRequest, { params }: Params) {
       status: "open",
     });
 
-    if (action === "mark-received" && openRound) {
+    if (!openRound) {
+      return NextResponse.json({ error: "There is no open round to update." }, { status: 400 });
+    }
+
+    if (action === "mark-received") {
       openRound.receivedAt = new Date();
       await openRound.save();
       return NextResponse.json({ ok: true });
     }
 
-    if (openRound) {
-      openRound.status = "completed";
-      openRound.completedAt = new Date();
-      await openRound.save();
+    if (action !== "advance") {
+      return NextResponse.json({ error: "Unsupported round action." }, { status: 400 });
     }
 
     const members = await ChamaMemberModel.find({
@@ -108,6 +111,31 @@ export async function POST(request: NextRequest, { params }: Params) {
       status: "active",
     }).lean();
     const memberIds = members.map((item) => String(item._id));
+    if (memberIds.length === 0) {
+      return NextResponse.json({ error: "Add and approve at least one active member before advancing." }, { status: 400 });
+    }
+
+    if (!openRound.receivedAt) {
+      return NextResponse.json({ error: "Mark the current payout as received before advancing." }, { status: 400 });
+    }
+
+    const contributionStats = await ChamaContributionModel.aggregate([
+      { $match: { groupId: group._id, roundId: openRound._id, status: "paid" } },
+      { $group: { _id: null, total: { $sum: "$amount" } } },
+    ]);
+    const collected = contributionStats[0]?.total ?? 0;
+    const requiredPot = calculatePotAmount(group, members.length);
+    if (collected < requiredPot) {
+      return NextResponse.json(
+        { error: `Record the full ${group.currency} ${requiredPot.toLocaleString()} contribution pot before advancing.` },
+        { status: 400 }
+      );
+    }
+
+    openRound.totalContributions = collected;
+    openRound.status = "completed";
+    openRound.completedAt = new Date();
+    await openRound.save();
 
     if (!group.rotationOrder || group.rotationOrder.length === 0) {
       group.rotationOrder = memberIds.map((id) => new Types.ObjectId(id));

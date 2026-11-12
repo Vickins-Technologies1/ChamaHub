@@ -11,6 +11,7 @@ const GroupSchema = new Schema(
       required: true,
     },
     numberOfMembers: { type: Number, default: 0, min: 1 },
+    expectedMemberCount: { type: Number, default: 1, min: 1 },
     startDate: { type: Date, required: true },
     currency: { type: String, default: "KES" },
     createdBy: { type: String, required: true },
