@@ -2,7 +2,6 @@
 "use client";
 
 import { createContext, useContext, useState, useEffect, ReactNode, useCallback } from "react";
-import Preloader from "./Preloader";
 
 interface ThemeContextType {
   isDarkMode: boolean;
@@ -25,7 +24,6 @@ interface ThemePreloaderProviderProps {
 
 export default function ThemePreloaderProvider({ children }: ThemePreloaderProviderProps) {
   const [isDarkMode, setIsDarkMode] = useState(false);
-  const [isPreloaderVisible, setIsPreloaderVisible] = useState(true);
 
   // Use the saved choice, or follow the operating system until the user picks a theme.
   useEffect(() => {
@@ -42,18 +40,6 @@ export default function ThemePreloaderProvider({ children }: ThemePreloaderProvi
     return () => media.removeEventListener("change", applyTheme);
   }, []);
 
-  // Hide preloader after 2 seconds
-  useEffect(() => {
-    const prefersReduced =
-      typeof window !== "undefined" &&
-      (window.matchMedia?.("(prefers-reduced-motion: reduce)")?.matches ?? false);
-    const timer = setTimeout(() => {
-      setIsPreloaderVisible(false);
-    }, prefersReduced ? 250 : 900);
-
-    return () => clearTimeout(timer);
-  }, []);
-
   const toggleTheme = useCallback(() => {
     setIsDarkMode((prev) => {
       const newTheme = prev ? "light" : "dark";
@@ -65,7 +51,6 @@ export default function ThemePreloaderProvider({ children }: ThemePreloaderProvi
 
   return (
     <ThemeContext.Provider value={{ isDarkMode, toggleTheme }}>
-      {isPreloaderVisible && <Preloader isDarkMode={isDarkMode} />}
       {children}
     </ThemeContext.Provider>
   );

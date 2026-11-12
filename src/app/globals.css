@@ -692,6 +692,7 @@ h4 {
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.45);
   backdrop-filter: blur(10px) saturate(1.2);
 }
+.glass-input::placeholder { color: var(--muted); opacity: .92; }
 
 .glass-input:focus {
   outline: none;
@@ -1277,6 +1278,41 @@ h4 {
 :root[data-theme="dark"] .landing-slideshow { background: #07152f; }
 :root[data-theme="dark"] .landing-slideshow__wash { background: linear-gradient(180deg, rgba(7,16,36,.64) 0%, rgba(7,20,45,.56) 35%, rgba(7,18,40,.62) 70%, rgba(7,16,36,.76) 100%), linear-gradient(115deg, rgba(15,64,154,.16), rgba(22,170,160,.08)); }
 :root[data-theme="dark"] .landing-hero { background: linear-gradient(135deg, rgba(10,28,62,.78), rgba(9,34,75,.72) 52%, rgba(7,35,51,.78)); }
+:root[data-theme="dark"] .landing-page { background: transparent; color: #eef4ff; }
+:root[data-theme="dark"] .landing-page .landing-nav { border-color: rgba(226,232,240,.12); background: rgba(8,16,34,.94); }
+:root[data-theme="dark"] .landing-page .landing-nav--scrolled { background: rgba(8,16,34,.98); }
+:root[data-theme="dark"] .landing-page .landing-nav a:not(.landing-primary-sm) { color: #d5e0f3; }
+:root[data-theme="dark"] .landing-page .landing-nav a:hover,
+:root[data-theme="dark"] .landing-page .landing-nav .landing-desktop-links a.is-active { color: #70e1d1; }
+:root[data-theme="dark"] .landing-page .landing-nav > div > a:first-child span { color: #f6f9ff; }
+:root[data-theme="dark"] .landing-page .landing-display,
+:root[data-theme="dark"] .landing-page .landing-heading,
+:root[data-theme="dark"] .landing-page .landing-subheading { color: #f4f7ff; }
+:root[data-theme="dark"] .landing-page .landing-display span { color: #72dcd0; }
+:root[data-theme="dark"] .landing-page .landing-copy { color: #c5d2e6; }
+:root[data-theme="dark"] .landing-page .landing-eyebrow,
+:root[data-theme="dark"] .landing-page .landing-label { color: #79e2d4; }
+:root[data-theme="dark"] .landing-page .landing-trust { border-color: rgba(226,232,240,.12); background: rgba(8,20,43,.58); }
+:root[data-theme="dark"] .landing-page .landing-trust strong { color: #edf4ff; }
+:root[data-theme="dark"] .landing-page .landing-trust small { color: #bac8dc; }
+:root[data-theme="dark"] .landing-page .landing-tab-list { border-color: rgba(226,232,240,.14); background: rgba(10,24,49,.88); }
+:root[data-theme="dark"] .landing-page .landing-tab { color: #c5d2e6; }
+:root[data-theme="dark"] .landing-page .landing-tab--active { background: #17294a; color: #90b8ff; }
+:root[data-theme="dark"] .landing-page .landing-payout-section,
+:root[data-theme="dark"] .landing-page .landing-faq-section { border-color: rgba(226,232,240,.14); background-color: rgba(9,21,44,.84) !important; }
+:root[data-theme="dark"] .landing-page .landing-faq-section button { color: #edf4ff; }
+:root[data-theme="dark"] .landing-page .landing-faq-section article { border-color: rgba(226,232,240,.16); }
+:root[data-theme="dark"] .landing-page .landing-final { border-color: rgba(226,232,240,.14); background: rgba(7,14,29,.88); }
+:root[data-theme="dark"] .landing-page footer { border-color: rgba(226,232,240,.14); background: #080f20; }
+:root[data-theme="dark"] .landing-page footer .text-slate-900 { color: #f2f6ff; }
+:root[data-theme="dark"] .landing-page footer .text-slate-500 { color: #b6c4d9; }
+:root[data-theme="dark"] .landing-page .landing-powered { color: #b6c4d9; }
+:root[data-theme="dark"] .landing-page .landing-menu-button { border-color: rgba(226,232,240,.24); color: #e8f0ff; }
+:root[data-theme="dark"] .landing-sidebar { border-color: rgba(226,232,240,.14); background: #0c1730; }
+:root[data-theme="dark"] .landing-sidebar .text-slate-950 { color: #f4f7ff; }
+:root[data-theme="dark"] .landing-sidebar .border-slate-200 { border-color: rgba(226,232,240,.14); }
+:root[data-theme="dark"] .landing-sidebar .landing-side-link { color: #c5d2e6; }
+:root[data-theme="dark"] .landing-sidebar .landing-side-link.is-active { background: #17294a; color: #9dc0ff; }
 :root[data-theme="dark"] .landing-final { background: rgba(7,16,36,.86); }
 @media (max-width: 767px) {
   .landing-slideshow__image { background-position: center; }
