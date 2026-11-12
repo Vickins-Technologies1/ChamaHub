@@ -1172,6 +1172,8 @@ h4 {
 .landing-back-top:hover { transform: translateY(-3px); background: #087e85; box-shadow: 0 14px 30px rgba(12,60,155,.36); }
 .landing-back-top:active { transform: scale(.94); }
 .landing-page section[id] { scroll-margin-top: 88px; }
+.landing-page :focus-visible { outline: 3px solid #20aaa9; outline-offset: 3px; }
+.landing-page a, .landing-page button { -webkit-tap-highlight-color: transparent; }
 .landing-nav a { transition: color .2s ease; }
 .landing-nav a:hover { color: #1452c4; }
 .landing-menu-button { display: inline-flex; align-items: center; justify-content: center; width: 40px; height: 40px; border: 1px solid #dbe4f0; border-radius: 10px; color: #0c2557; }
@@ -1215,6 +1217,10 @@ h4 {
 .landing-section--ink { background: linear-gradient(135deg, #071a40, #0c2c66); }
 .landing-section--ink .landing-heading { color: #fff; }
 .landing-section--ink .landing-copy { color: #c5d4ee; }
+.landing-security .landing-heading,
+.landing-final .landing-heading { color: #fff; }
+.landing-security .landing-eyebrow,
+.landing-final .landing-eyebrow { color: #6ee7d4; }
 .landing-text-link { display: inline-flex; align-items: center; gap: .5rem; color: #0c3c9b; font-size: 14px; font-weight: 700; }
 .landing-text-link:hover { color: #178591; }
 .landing-finance, .landing-payout-card { padding: clamp(1.3rem, 3.5vw, 2rem); }

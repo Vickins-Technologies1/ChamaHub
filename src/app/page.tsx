@@ -94,7 +94,10 @@ export default function Home() {
     document.body.style.overflow = "hidden";
     sidebarRef.current?.querySelector<HTMLElement>("a, button")?.focus();
     const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape") closeMenu();
+      if (event.key === "Escape") {
+        setMenuOpen(false);
+        requestAnimationFrame(() => toggleRef.current?.focus());
+      }
       if (event.key === "Tab" && sidebarRef.current) {
         const items = sidebarRef.current.querySelectorAll<HTMLElement>('a[href], button:not([disabled])');
         const first = items[0]; const last = items[items.length - 1];
