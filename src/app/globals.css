@@ -1,21 +1,5 @@
 @import "tailwindcss";
 
-.brand-logo {
-  display: inline-block;
-  flex: 0 0 auto;
-  background-position: center;
-  background-repeat: no-repeat;
-  background-size: contain;
-}
-
-.brand-logo--theme {
-  background-image: url("/chamahub-mark.svg");
-}
-
-:root[data-theme="dark"] .brand-logo--theme {
-  background-image: url("/chamahub-mark.svg");
-}
-
 :root {
   /* Premium light palette (blue-forward) */
   --bg-cream: #f7f9ff;

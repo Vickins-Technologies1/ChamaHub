@@ -10,7 +10,13 @@ const display = Space_Grotesk({ subsets: ["latin"], display: "swap", variable: "
 export const metadata: Metadata = {
   title: { default: "ChamaHub", template: "%s | ChamaHub" },
   description: "Manage chama groups, contributions, meetings, and payouts with ChamaHub.",
-  icons: { icon: "/chamahub-mark.svg" },
+  icons: {
+    icon: [
+      { url: "/favicon-16.png", sizes: "16x16", type: "image/png" },
+      { url: "/favicon-32.png", sizes: "32x32", type: "image/png" },
+    ],
+    apple: "/apple-touch-icon.png",
+  },
 };
 
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {

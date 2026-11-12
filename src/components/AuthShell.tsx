@@ -1,7 +1,7 @@
 "use client";
 
-import Image from "next/image";
 import Link from "next/link";
+import BrandLogo from "@/components/BrandLogo";
 
 type AuthShellProps = {
   eyebrow: string;
@@ -28,7 +28,7 @@ export default function AuthShell({
       <div className="auth-shell__grid">
         <aside className="auth-shell__brand">
           <div className="flex items-center gap-3">
-            <Image src="/chamahub-mark.svg" alt="ChamaHub" width={54} height={54} priority />
+            <BrandLogo size={54} priority />
             <div>
               <p className="text-xs uppercase tracking-[0.4em] text-white/70">ChamaHub</p>
               <p className="text-lg font-semibold text-white">{brandTitle}</p>
@@ -52,7 +52,7 @@ export default function AuthShell({
           <div className="auth-shell__card">
             <div className="flex items-center justify-between gap-4">
               <div className="flex items-center gap-3 text-[var(--button-bg)] text-xs sm:text-sm uppercase tracking-[0.3em]">
-                <Image src="/chamahub-mark.svg" alt="" width={22} height={22} />
+                <BrandLogo size={22} />
                 {eyebrow}
               </div>
               <Link
