@@ -115,6 +115,13 @@ export default function Home() {
 
   return (
     <main className="landing-page">
+      <div className="landing-slideshow" aria-hidden="true">
+        <div className="landing-slideshow__image landing-slideshow__image--one" />
+        <div className="landing-slideshow__image landing-slideshow__image--two" />
+        <div className="landing-slideshow__image landing-slideshow__image--three" />
+        <div className="landing-slideshow__image landing-slideshow__image--four" />
+        <div className="landing-slideshow__wash" />
+      </div>
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(structuredData) }} />
       <header className={`landing-nav ${scrolled ? "landing-nav--scrolled" : ""}`}>
         <div className="landing-shell flex h-[72px] items-center justify-between gap-4">
