@@ -1154,6 +1154,24 @@ h4 {
 .landing-page { overflow: hidden; background: #fff; color: #0f172a; }
 .landing-shell { width: min(1200px, calc(100% - 2.5rem)); margin-inline: auto; }
 .landing-nav { position: sticky; top: 0; z-index: 50; border-bottom: 1px solid rgba(226,232,240,.82); background: rgba(255,255,255,.9); backdrop-filter: blur(18px); }
+.landing-nav { transition: box-shadow .25s ease, background .25s ease, border-color .25s ease; }
+.landing-nav--scrolled { border-color: #e1e8f2; background: rgba(255,255,255,.97); box-shadow: 0 8px 28px rgba(11,35,77,.08); }
+.landing-desktop-links { display: none; align-items: center; gap: clamp(.8rem, 1.7vw, 1.5rem); border: 1px solid rgba(220,230,244,.8); border-radius: 999px; padding: .45rem .6rem; background: rgba(255,255,255,.64); }
+.landing-desktop-links a { position: relative; padding: .48rem .62rem; color: #58677e; font-size: 12px; font-weight: 650; white-space: nowrap; }
+.landing-desktop-links a::after { position: absolute; right: .62rem; bottom: .23rem; left: .62rem; height: 2px; border-radius: 2px; background: #27b9ad; content: ""; transform: scaleX(0); transform-origin: left; transition: transform .2s ease; }
+.landing-desktop-links a:hover, .landing-desktop-links a.is-active { color: #0c3c9b; }
+.landing-desktop-links a.is-active::after { transform: scaleX(1); }
+.landing-nav-actions { display: none; align-items: center; gap: 1rem; }
+.landing-signin { color: #35445b; font-size: 13px; font-weight: 650; white-space: nowrap; }
+.landing-sidebar-backdrop { position: fixed; z-index: 80; inset: 0; width: 100%; height: 100dvh; border: 0; background: rgba(5,18,43,.38); backdrop-filter: blur(2px); }
+.landing-sidebar { position: fixed; z-index: 81; inset: 0 auto 0 0; display: flex; width: min(80vw, 360px); height: 100dvh; flex-direction: column; overflow-y: auto; border-right: 1px solid #e0e8f3; background: #fff; box-shadow: 18px 0 60px rgba(5,18,43,.14); }
+.landing-side-link { display: flex; min-height: 48px; align-items: center; justify-content: space-between; border-radius: 11px; padding: .7rem .85rem; color: #53627a; font-size: 14px; font-weight: 650; transition: color .18s ease, background .18s ease, transform .18s ease; }
+.landing-side-link:hover { transform: translateX(2px); background: #f2f7ff; color: #0c3c9b; }
+.landing-side-link.is-active { background: #edf4ff; color: #0c3c9b; }
+.landing-back-top { position: fixed; z-index: 60; right: max(1.25rem, env(safe-area-inset-right)); bottom: max(1.25rem, env(safe-area-inset-bottom)); display: inline-flex; width: 48px; height: 48px; align-items: center; justify-content: center; border: 1px solid rgba(255,255,255,.22); border-radius: 50%; background: #0c3c9b; color: #fff; box-shadow: 0 10px 28px rgba(12,60,155,.3); transition: background .2s ease, transform .2s ease, box-shadow .2s ease; }
+.landing-back-top:hover { transform: translateY(-3px); background: #087e85; box-shadow: 0 14px 30px rgba(12,60,155,.36); }
+.landing-back-top:active { transform: scale(.94); }
+.landing-page section[id] { scroll-margin-top: 88px; }
 .landing-nav a { transition: color .2s ease; }
 .landing-nav a:hover { color: #1452c4; }
 .landing-menu-button { display: inline-flex; align-items: center; justify-content: center; width: 40px; height: 40px; border: 1px solid #dbe4f0; border-radius: 10px; color: #0c2557; }
@@ -1208,6 +1226,17 @@ h4 {
 @media (min-width: 640px) {
   .landing-steps { grid-template-columns: repeat(3, 1fr); }
   .landing-step { min-height: 205px; flex-direction: column; }
+}
+@media (min-width: 768px) {
+  .landing-desktop-links { display: flex; }
+  .landing-nav-actions { display: flex; }
+  .landing-menu-button { display: none; }
+}
+@media (min-width: 768px) and (max-width: 1050px) {
+  .landing-desktop-links { gap: .15rem; padding: .35rem; }
+  .landing-desktop-links a { padding-inline: .4rem; font-size: 11px; }
+  .landing-nav-actions { gap: .65rem; }
+  .landing-primary-sm { padding-inline: .7rem; font-size: 12px; }
 }
 @media (max-width: 639px) {
   .landing-shell { width: min(100% - 2rem, 1200px); }

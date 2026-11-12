@@ -2,10 +2,11 @@
 
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import Link from "next/link";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { LucideIcon } from "lucide-react";
 import {
   ArrowRight,
+  ArrowUp,
   BadgeCheck,
   Bell,
   CalendarDays,
@@ -60,25 +61,69 @@ const structuredData = {
 
 export default function Home() {
   const [menuOpen, setMenuOpen] = useState(false);
+  const [scrolled, setScrolled] = useState(false);
+  const [showTop, setShowTop] = useState(false);
+  const [activeSection, setActiveSection] = useState("overview");
+  const sidebarRef = useRef<HTMLElement>(null);
+  const toggleRef = useRef<HTMLButtonElement>(null);
   const [activeTab, setActiveTab] = useState("overview");
   const [openFaq, setOpenFaq] = useState<number | null>(0);
   const reduceMotion = useReducedMotion();
   const active = tabs.find((tab) => tab.id === activeTab) ?? tabs[0];
 
+  useEffect(() => {
+    const update = () => {
+      setScrolled(window.scrollY > 24);
+      setShowTop(window.scrollY > 350);
+      const sections = ["overview", "features", "how-it-works", "security", "faq"];
+      let current = "overview";
+      for (const id of sections) {
+        const node = document.getElementById(id);
+        if (node && node.getBoundingClientRect().top <= 150) current = id;
+      }
+      setActiveSection(current);
+    };
+    update();
+    window.addEventListener("scroll", update, { passive: true });
+    return () => window.removeEventListener("scroll", update);
+  }, []);
+
+  useEffect(() => {
+    if (!menuOpen) return;
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    sidebarRef.current?.querySelector<HTMLElement>("a, button")?.focus();
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") closeMenu();
+      if (event.key === "Tab" && sidebarRef.current) {
+        const items = sidebarRef.current.querySelectorAll<HTMLElement>('a[href], button:not([disabled])');
+        const first = items[0]; const last = items[items.length - 1];
+        if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last?.focus(); }
+        else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first?.focus(); }
+      }
+    };
+    document.addEventListener("keydown", onKeyDown);
+    return () => { document.body.style.overflow = previousOverflow; document.removeEventListener("keydown", onKeyDown); };
+  }, [menuOpen]);
+
+  function closeMenu() { setMenuOpen(false); requestAnimationFrame(() => toggleRef.current?.focus()); }
+
+  const navItems = [["overview", "Overview"], ["features", "Features"], ["how-it-works", "How It Works"], ["security", "Security"], ["faq", "FAQ"]];
+
   return (
     <main className="landing-page">
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(structuredData) }} />
-      <header className="landing-nav">
+      <header className={`landing-nav ${scrolled ? "landing-nav--scrolled" : ""}`}>
         <div className="landing-shell flex h-[72px] items-center justify-between gap-4">
           <Link href="/" className="flex items-center gap-2.5" aria-label="ChamaHub home"><BrandLogo size={34} priority /><span className="font-[family-name:var(--font-display)] text-xl font-bold tracking-[-.04em] text-slate-950">ChamaHub</span></Link>
-          <nav className="hidden items-center gap-6 text-sm font-medium text-slate-600 lg:flex" aria-label="Main navigation"><a href="#product">Product</a><a href="#how-it-works">How it works</a><a href="#features">Features</a><a href="#security">Security</a><a href="#faq">FAQ</a></nav>
-          <div className="hidden items-center gap-4 sm:flex"><Link href="/member-login" className="text-sm font-semibold text-slate-700 hover:text-blue-700">Sign in</Link><Link href="/moderator-signup" className="landing-primary-sm">Create a group <ArrowRight size={15} /></Link></div>
-          <button type="button" className="landing-menu-button sm:hidden" onClick={() => setMenuOpen((value) => !value)} aria-label="Toggle navigation" aria-expanded={menuOpen}>{menuOpen ? <X size={20} /> : <Menu size={20} />}</button>
+          <nav className="landing-desktop-links" aria-label="Main navigation">{navItems.map(([id, label]) => <a key={id} href={`#${id}`} className={activeSection === id ? "is-active" : ""}>{label}</a>)}</nav>
+          <div className="landing-nav-actions"><Link href="/member-login" className="landing-signin">Sign In</Link><Link href="/moderator-signup" className="landing-primary-sm">Create a Group <ArrowRight size={15} /></Link></div>
+          <button ref={toggleRef} type="button" className="landing-menu-button" onClick={() => setMenuOpen(true)} aria-label="Open navigation" aria-expanded={menuOpen} aria-controls="mobile-sidebar"><Menu size={20} /></button>
         </div>
-        <AnimatePresence>{menuOpen ? <motion.nav initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: "auto" }} exit={{ opacity: 0, height: 0 }} className="border-t border-slate-200 bg-white px-5 sm:hidden"><div className="landing-shell grid gap-1 py-4 text-sm font-semibold text-slate-700">{[["#product", "Product"], ["#how-it-works", "How it works"], ["#features", "Features"], ["#security", "Security"], ["#faq", "FAQ"]].map(([href, label]) => <a key={href} href={href} onClick={() => setMenuOpen(false)} className="rounded-lg px-3 py-2 hover:bg-slate-50">{label}</a>)}<Link href="/member-login" className="rounded-lg px-3 py-2 hover:bg-slate-50">Sign in</Link><Link href="/moderator-signup" className="mt-2 inline-flex items-center justify-center gap-2 rounded-xl bg-[#0c2557] px-4 py-3 text-white">Create a group <ArrowRight size={16} /></Link></div></motion.nav> : null}</AnimatePresence>
+        <AnimatePresence>{menuOpen ? <><motion.button aria-label="Close navigation backdrop" className="landing-sidebar-backdrop" onClick={closeMenu} initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} /><motion.nav ref={sidebarRef} id="mobile-sidebar" aria-label="Mobile navigation" aria-modal="true" role="dialog" initial={{ x: "-100%" }} animate={{ x: 0 }} exit={{ x: "-100%" }} transition={{ type: "spring", stiffness: 340, damping: 36 }} className="landing-sidebar"><div className="flex items-center justify-between border-b border-slate-200 px-5 py-5"><Link href="/" onClick={closeMenu} className="flex items-center gap-2" aria-label="ChamaHub home"><BrandLogo size={30} /><span className="font-[family-name:var(--font-display)] text-lg font-bold text-slate-950">ChamaHub</span></Link><button type="button" onClick={closeMenu} className="landing-menu-button" aria-label="Close navigation"><X size={20} /></button></div><div className="grid gap-1 px-4 py-5">{navItems.map(([id, label]) => <a key={id} href={`#${id}`} onClick={closeMenu} className={`landing-side-link ${activeSection === id ? "is-active" : ""}`}>{label}<ChevronRight size={17} /></a>)}</div><div className="mt-auto grid gap-3 border-t border-slate-200 p-5"><Link href="/member-login" onClick={closeMenu} className="landing-secondary">Sign In</Link><Link href="/moderator-signup" onClick={closeMenu} className="landing-primary">Create a Group <ArrowRight size={16} /></Link></div></motion.nav></> : null}</AnimatePresence>
       </header>
 
-      <section className="landing-hero">
+      <section id="overview" className="landing-hero">
         <div className="landing-orb landing-orb--one" /><div className="landing-orb landing-orb--two" />
         <div className="landing-shell relative grid items-center gap-14 pb-20 pt-16 lg:grid-cols-[.86fr_1.14fr] lg:pb-28 lg:pt-24">
           <motion.div initial="hidden" animate="visible" variants={{ visible: { transition: { staggerChildren: 0.1 } } }} className="max-w-xl">
@@ -112,6 +157,7 @@ export default function Home() {
 
       <section className="landing-final"><div className="landing-shell"><div className="relative overflow-hidden rounded-[28px] bg-[#0c2557] px-6 py-14 text-center text-white sm:px-12 sm:py-20"><div className="landing-final-orb" /><div className="relative mx-auto max-w-2xl"><p className="landing-eyebrow text-emerald-300">Ready for a better rhythm?</p><h2 className="landing-heading mt-4 text-white">Your group deserves better organization.</h2><p className="mx-auto mt-5 max-w-xl text-[16px] leading-7 text-blue-100">Start managing your savings group with greater clarity, accountability and confidence.</p><div className="mt-8 flex flex-wrap justify-center gap-3"><Link href="/moderator-signup" className="landing-primary landing-primary--light">Create your group <ArrowRight size={18} /></Link><Link href="/member-signup" className="landing-secondary landing-secondary--dark">Join a group <ChevronRight size={18} /></Link></div></div></div></div></section>
       <footer className="border-t border-slate-200 bg-white"><div className="landing-shell flex flex-col gap-5 py-8 text-sm text-slate-500 sm:flex-row sm:items-center sm:justify-between"><div className="flex items-center gap-2.5 text-slate-900"><BrandLogo size={28} /><span className="font-[family-name:var(--font-display)] font-bold tracking-[-.03em]">ChamaHub</span></div><div className="flex flex-wrap gap-x-5 gap-y-2"><a href="#security">Security</a><a href="#faq">FAQ</a><Link href="/member-login">Sign in</Link></div><p className="text-xs">© 2026 ChamaHub</p></div></footer>
+      <AnimatePresence><motion.button type="button" aria-label="Back to top" className="landing-back-top" onClick={() => window.scrollTo({ top: 0, behavior: reduceMotion ? "instant" : "smooth" })} initial={{ opacity: 0, y: 10, scale: .9 }} animate={{ opacity: showTop ? 1 : 0, y: showTop ? 0 : 10, scale: showTop ? 1 : .9 }} transition={{ duration: .2 }} style={{ pointerEvents: showTop ? "auto" : "none" }}><ArrowUp size={19} /></motion.button></AnimatePresence>
     </main>
   );
 }
