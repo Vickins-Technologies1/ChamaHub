@@ -21,6 +21,7 @@ function MemberLoginContent() {
   const [showPassword, setShowPassword] = useState(false);
 
   const callbackUrl = useMemo(() => searchParams.get("callbackUrl") ?? "/chama", [searchParams]);
+  const passwordReset = searchParams.get("passwordReset") === "success";
   const safeCallback = useMemo(() => {
     if (!callbackUrl.startsWith("/")) return "/chama";
     if (callbackUrl.startsWith("/admin")) return "/chama";
@@ -40,7 +41,9 @@ function MemberLoginContent() {
     });
 
     if (signinError) {
-      setError("Invalid email or password.");
+      setError(passwordReset
+        ? "Your password reset was accepted, but this sign-in attempt failed. Check that you're using the email and latest password for this member account. If needed, request another reset link."
+        : "We couldn't sign you in with these details. Check your email and password, or request a reset link if you no longer know the password.");
       setLoading(false);
       return;
     }
@@ -102,6 +105,11 @@ function MemberLoginContent() {
         {error && (
           <p className="text-rose-500 text-center text-sm bg-rose-50 dark:bg-rose-900/30 py-2 rounded-lg">
             {error}
+          </p>
+        )}
+        {passwordReset && !error && (
+          <p role="status" className="text-center text-sm rounded-lg bg-emerald-50 text-emerald-800 py-2">
+            Password updated. Sign in with your new password.
           </p>
         )}
       </form>

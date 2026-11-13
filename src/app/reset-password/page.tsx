@@ -23,9 +23,20 @@ function ResetPasswordContent() {
     setLoading(true); setMessage("");
     try {
       const response = await fetch("/api/auth/reset-password", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ newPassword: password, token }) });
-      if (!response.ok) throw new Error();
-      router.replace(role === "moderator" ? "/moderator-login" : "/member-login");
-    } catch { setMessage("This reset link is invalid or expired. Request a new one."); } finally { setLoading(false); }
+      const data = await response.json().catch(() => null);
+      if (!response.ok || data?.status !== true) {
+        const code = String(data?.code ?? data?.error ?? "");
+        if (code.toLowerCase().includes("token")) {
+          setMessage("This reset link has expired or was already used. Request a new password reset link.");
+        } else {
+          setMessage("We couldn't update your password. Request a new reset link and try again.");
+        }
+        return;
+      }
+      router.replace(role === "moderator" ? "/moderator-login?passwordReset=success" : "/member-login?passwordReset=success");
+    } catch {
+      setMessage("We couldn't reach the password service. Check your connection and try again, or request a new reset link.");
+    } finally { setLoading(false); }
   };
 
   const forgotPasswordHref = role === "moderator" ? "/forgot-password?role=moderator" : "/forgot-password?role=member";
