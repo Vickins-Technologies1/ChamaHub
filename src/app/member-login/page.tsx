@@ -110,7 +110,7 @@ function MemberLoginContent() {
         <Link href="/member-signup" className="text-[var(--button-bg)] font-semibold hover:underline">
           Create a member account
         </Link>
-        <div className="flex items-center gap-4"><Link href="/forgot-password" className="hover:text-[var(--button-bg)] hover:underline">Forgot password?</Link><Link href="/moderator-login" className="inline-flex items-center gap-2 hover:underline">Moderator login <ArrowRight size={14} /></Link></div>
+        <div className="flex items-center gap-4"><Link href="/forgot-password?role=member" className="hover:text-[var(--button-bg)] hover:underline">Forgot password?</Link><Link href="/moderator-login" className="inline-flex items-center gap-2 hover:underline">Moderator login <ArrowRight size={14} /></Link></div>
       </div>
     </AuthShell>
   );

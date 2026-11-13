@@ -14,10 +14,14 @@ export default function ForgotPasswordPage() {
     setLoading(true);
     setMessage("");
     try {
+      const requestedRole = new URLSearchParams(window.location.search).get("role");
+      const role = requestedRole === "moderator" ? "moderator" : "member";
+      const redirectTo = new URL("/reset-password", window.location.origin);
+      redirectTo.searchParams.set("role", role);
       const response = await fetch("/api/auth/request-password-reset", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email: email.trim().toLowerCase(), redirectTo: `${window.location.origin}/reset-password` }),
+        body: JSON.stringify({ email: email.trim().toLowerCase(), redirectTo: redirectTo.toString() }),
       });
       if (!response.ok) throw new Error();
       setMessage("If an account uses that email, a secure reset link is on its way.");

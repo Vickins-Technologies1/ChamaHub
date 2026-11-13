@@ -109,7 +109,7 @@ function ModeratorLoginContent() {
         <Link href="/moderator-signup" className="text-[var(--button-bg)] font-semibold hover:underline">
           Create a moderator account
         </Link>
-        <div className="flex items-center gap-4"><Link href="/forgot-password" className="hover:text-[var(--button-bg)] hover:underline">Forgot password?</Link><Link href="/member-login" className="inline-flex items-center gap-2 hover:underline">Member login <ArrowRight size={14} /></Link></div>
+        <div className="flex items-center gap-4"><Link href="/forgot-password?role=moderator" className="hover:text-[var(--button-bg)] hover:underline">Forgot password?</Link><Link href="/member-login" className="inline-flex items-center gap-2 hover:underline">Member login <ArrowRight size={14} /></Link></div>
       </div>
     </AuthShell>
   );
