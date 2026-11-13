@@ -157,7 +157,7 @@ export default function ChamaPulseAdminPage() {
               Monitor group performance and member activity.
             </h1>
             <p className="text-sm sm:text-base text-[var(--muted)] mt-3 max-w-2xl">
-              Track leases per group, member participation, and contribution flow in one admin view.
+              Track group participation, active rounds, and recorded contributions from one workspace.
             </p>
           </div>
           <div className="flex flex-wrap gap-3">
@@ -201,8 +201,8 @@ export default function ChamaPulseAdminPage() {
             icon: CalendarCheck,
           },
           {
-            label: "Total Collected",
-            value: metrics ? formatMoney(metrics.totalCollected) : "--",
+              label: "Contribution entries",
+              value: metrics ? metrics.totalContributions.toLocaleString("en-KE") : "--",
             icon: Wallet,
           },
         ].map((stat) => (

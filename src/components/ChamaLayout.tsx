@@ -6,20 +6,16 @@ import { useRouter } from "next/navigation";
 import { authClient } from "@/lib/auth-client";
 import { PremiumDashboardShellLoader } from "@/components/dashboard/DashboardLoaders";
 import AdminLteShell from "@/components/dashboard/AdminLteShell";
-import {
-  LayoutDashboard,
-  Users,
-  CalendarCheck,
-  ClipboardList,
-  Wallet,
-  Sparkles,
-  ArrowRight,
-} from "lucide-react";
+import { LayoutDashboard, Users, CalendarCheck, ClipboardList, Wallet, Sparkles } from "lucide-react";
 
 export default function ChamaLayout({ children }: { children: React.ReactNode }) {
   const { data: session, isPending } = authClient.useSession();
   const router = useRouter();
-  const [rolePanels, setRolePanels] = useState({ hasSecretary: false, hasTreasurer: false });
+  const [rolePanels, setRolePanels] = useState({
+    hasGroupAdmin: false,
+    hasSecretary: false,
+    hasTreasurer: false,
+  });
 
   useEffect(() => {
     let isActive = true;
@@ -34,6 +30,7 @@ export default function ChamaLayout({ children }: { children: React.ReactNode })
         );
         if (!isActive) return;
         setRolePanels({
+          hasGroupAdmin: roles.includes("admin"),
           hasSecretary: roles.includes("secretary"),
           hasTreasurer: roles.includes("treasurer"),
         });
@@ -86,16 +83,18 @@ export default function ChamaLayout({ children }: { children: React.ReactNode })
     ? session.user.role.split(",").map((value: string) => value.trim())
     : [];
   const isModerator = roleList.includes("moderator") || roleList.includes("admin");
+  const canViewGroups =
+    isModerator || rolePanels.hasGroupAdmin || rolePanels.hasSecretary || rolePanels.hasTreasurer;
 
-  const navItems = [
-    { href: "/chama", label: "Dashboard", icon: LayoutDashboard },
-    { href: "/chama/groups", label: "Groups", icon: Users },
+  const workspaceItems = [
+    { href: "/chama", label: "Overview", icon: LayoutDashboard },
+    ...(canViewGroups ? [{ href: "/chama/groups", label: "Groups", icon: Users }] : []),
     { href: "/chama/ledger", label: "Contributions", icon: CalendarCheck },
+  ];
+  const groupTools = [
     ...(rolePanels.hasSecretary ? [{ href: "/chama/secretary", label: "Secretary", icon: ClipboardList }] : []),
     ...(rolePanels.hasTreasurer ? [{ href: "/chama/treasurer", label: "Treasurer", icon: Wallet }] : []),
   ];
-
-  const filteredNav = isModerator ? navItems : navItems.filter((item) => item.href !== "/chama/groups");
 
   const handleSignOut = async () => {
     await authClient.signOut();
@@ -110,14 +109,22 @@ export default function ChamaLayout({ children }: { children: React.ReactNode })
       appName="ChamaPulse"
       appHref="/chama"
       headerKicker="ChamaPulse Workspace"
-      navSections={[{ label: "Workspace", items: filteredNav }]}
+      navSections={[
+        { label: "Workspace", items: workspaceItems },
+        ...(groupTools.length ? [{ label: "Group tools", items: groupTools }] : []),
+      ]}
       quickActions={
         isModerator
           ? [
               { href: "/chama/groups", label: "Create group" },
-              { href: "/chama/ledger", label: "Record contribution" },
+              { href: "/chama/ledger", label: "Review contributions" },
             ]
-          : [{ href: "/chama/ledger", label: "View contributions" }]
+          : rolePanels.hasTreasurer
+            ? [
+                { href: "/chama/treasurer", label: "Record contribution" },
+                { href: "/chama/ledger", label: "View contributions" },
+              ]
+            : [{ href: "/chama/ledger", label: "View contributions" }]
       }
       user={{
         primary: session.user.name || session.user.email,

@@ -1,8 +1,18 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { ArrowRight, CalendarCheck, Plus, Sparkles, Users, Wallet } from "lucide-react";
+import {
+  ArrowRight,
+  ArrowUpRight,
+  CalendarClock,
+  CheckCircle2,
+  CircleDollarSign,
+  Clock3,
+  Plus,
+  UsersRound,
+  WalletCards,
+} from "lucide-react";
 import { authClient } from "@/lib/auth-client";
 
 type DashboardSummary = {
@@ -19,6 +29,7 @@ type GroupSummary = {
   currency: string;
   role: string;
   status: string;
+  membersCount: number;
   openRound?: {
     id: string;
     roundNumber: number;
@@ -29,269 +40,281 @@ type GroupSummary = {
   } | null;
 };
 
-const formatDate = (value?: string) =>
-  value ? new Date(value).toLocaleDateString("en-KE", { month: "short", day: "numeric" }) : "—";
+type RecentActivity = {
+  id: string;
+  groupId: string;
+  groupName: string;
+  memberName: string;
+  amount: number;
+  currency: string;
+  status: "paid" | "pending";
+  paidAt?: string;
+};
+
+const formatDate = (value?: string, options: Intl.DateTimeFormatOptions = { month: "short", day: "numeric" }) =>
+  value ? new Date(value).toLocaleDateString("en-KE", options) : "Date not set";
+
+const formatCurrency = (amount: number, currency = "KES") =>
+  new Intl.NumberFormat("en-KE", { style: "currency", currency, maximumFractionDigits: 0 }).format(amount);
+
+function daysUntil(value?: string) {
+  if (!value) return null;
+  const due = new Date(value);
+  if (Number.isNaN(due.getTime())) return null;
+  return Math.ceil((due.getTime() - Date.now()) / (1000 * 60 * 60 * 24));
+}
+
+function dueLabel(value?: string) {
+  const days = daysUntil(value);
+  if (days === null) return "Date not set";
+  if (days < 0) return `${Math.abs(days)} day${Math.abs(days) === 1 ? "" : "s"} overdue`;
+  if (days === 0) return "Due today";
+  if (days === 1) return "Due tomorrow";
+  return `Due in ${days} days`;
+}
 
 export default function ChamaDashboardPage() {
   const { data: session } = authClient.useSession();
   const [summary, setSummary] = useState<DashboardSummary | null>(null);
   const [groups, setGroups] = useState<GroupSummary[]>([]);
+  const [activity, setActivity] = useState<RecentActivity[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
-  const currencyFormatter = useMemo(
-    () =>
-      new Intl.NumberFormat("en-KE", {
-        style: "currency",
-        currency: "KES",
-        maximumFractionDigits: 0,
-      }),
-    []
-  );
+  const roles = (session?.user?.role ?? "").split(",").map((value: string) => value.trim());
+  const canManageGroups = roles.includes("moderator") || roles.includes("admin");
 
-  const isModerator =
-    session?.user?.role?.split(",").map((value: string) => value.trim()).includes("moderator") ??
-    false;
-  const isAdmin =
-    session?.user?.role?.split(",").map((value: string) => value.trim()).includes("admin") ?? false;
-
-  const loadDashboard = async () => {
+  const loadDashboard = useCallback(async () => {
     setLoading(true);
     setError("");
     try {
       const response = await fetch("/api/chama/dashboard", { cache: "no-store" });
       const data = await response.json();
       if (!response.ok) throw new Error(data?.error || "Failed to load dashboard.");
-      setSummary(data.summary);
+      setSummary(data.summary ?? null);
       setGroups(data.groups ?? []);
+      setActivity(data.activity ?? []);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Unable to load dashboard.");
     } finally {
       setLoading(false);
     }
-  };
-
-  useEffect(() => {
-    loadDashboard();
   }, []);
 
-  const upcomingRounds = useMemo(() => {
-    return groups
-      .filter((group) => group.openRound?.dueDate)
-      .map((group) => ({
-        id: group.id,
-        name: group.name,
-        dueDate: new Date(group.openRound?.dueDate ?? ""),
-        potAmount: group.openRound?.potAmount ?? 0,
-        roundNumber: group.openRound?.roundNumber ?? 0,
-      }))
-      .sort((a, b) => a.dueDate.getTime() - b.dueDate.getTime());
-  }, [groups]);
+  useEffect(() => {
+    void loadDashboard();
+  }, [loadDashboard]);
 
-  const totalOpenPot = useMemo(
-    () => upcomingRounds.reduce((sum, round) => sum + (round.potAmount || 0), 0),
-    [upcomingRounds]
+  const rounds = useMemo(
+    () => groups
+      .filter((group) => group.openRound)
+      .map((group) => ({ ...group, dueAt: group.openRound?.dueDate }))
+      .sort((a, b) => (a.dueAt ? new Date(a.dueAt).getTime() : Number.POSITIVE_INFINITY) - (b.dueAt ? new Date(b.dueAt).getTime() : Number.POSITIVE_INFINITY)),
+    [groups]
   );
 
-  const dueSoonCount = useMemo(() => {
-    const now = new Date();
-    return upcomingRounds.filter((round) => {
-      const diff = Math.ceil((round.dueDate.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
-      return diff >= 0 && diff <= 7;
-    }).length;
-  }, [upcomingRounds]);
+  const dueSoonCount = rounds.filter((group) => {
+    const days = daysUntil(group.dueAt);
+    return days !== null && days >= 0 && days <= 7;
+  }).length;
 
-  const groupPulse = useMemo(() => groups.slice(0, 4), [groups]);
+  const activeMemberships = groups.reduce((total, group) => total + (group.membersCount || 0), 0);
+  const today = new Intl.DateTimeFormat("en-KE", {
+    weekday: "long", day: "numeric", month: "long", year: "numeric",
+  }).format(new Date());
+  const firstName = session?.user?.name?.trim().split(/\s+/)[0] || "there";
 
   if (loading) {
     return (
-      <div className="space-y-6">
-        <div className="glass-panel p-6 sm:p-8 h-40 shimmer-line" />
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-          {[0, 1, 2, 3].map((item) => (
-            <div key={item} className="glass-panel p-6 h-24 shimmer-line" />
-          ))}
+      <div className="space-y-5" aria-label="Loading dashboard">
+        <div className="dashboard-hero h-44 shimmer-line rounded-2xl" />
+        <div className="grid grid-cols-2 gap-3 xl:grid-cols-4">
+          {[0, 1, 2, 3].map((item) => <div key={item} className="glass-panel h-28 shimmer-line" />)}
+        </div>
+        <div className="grid gap-5 xl:grid-cols-[1.45fr_.9fr]">
+          <div className="glass-panel h-80 shimmer-line" />
+          <div className="glass-panel h-80 shimmer-line" />
         </div>
       </div>
     );
   }
 
   return (
-    <div className="space-y-8">
-      <section className="glass-panel p-6 sm:p-8 relative overflow-hidden">
-        <div className="absolute inset-0 opacity-70 bg-[radial-gradient(circle_at_top,_rgba(0,144,224,0.18),_transparent_55%)]" />
-        <div className="relative z-10 flex flex-col lg:flex-row gap-6 lg:items-center lg:justify-between">
-          <div>
-            <p className="inline-flex items-center gap-2 text-xs sm:text-sm uppercase tracking-[0.3em] text-[var(--accent)]">
-              <Sparkles size={16} />
-              Chama Workspace
-            </p>
-            <h1 className="text-2xl sm:text-3xl lg:text-4xl font-semibold mt-3">
-              Keep contributions on track and payouts on time.
-            </h1>
-            <p className="text-sm sm:text-base text-[var(--muted)] mt-3 max-w-2xl">
-              A focused hub for upcoming dues, group health, and quick moderation actions.
-            </p>
+    <div className="space-y-5 sm:space-y-6">
+      <section className="dashboard-hero relative overflow-hidden rounded-2xl px-5 py-6 text-white sm:px-7 sm:py-7">
+        <div className="dashboard-hero__orb" aria-hidden="true" />
+        <div className="relative z-10 flex flex-col justify-between gap-5 sm:flex-row sm:items-end">
+          <div className="min-w-0">
+            <p className="dashboard-hero__eyebrow">Your group. One financial pulse.</p>
+            <h2 className="mt-2 text-2xl font-semibold tracking-tight sm:text-[28px]">
+              Good day, {firstName}.
+            </h2>
+            <p className="mt-1 text-sm text-white/70">A clear view of your groups and what is coming up.</p>
           </div>
-          <div className="flex flex-wrap items-center gap-3">
-            <Link
-              href="/chama/groups"
-              className="inline-flex items-center gap-2 px-5 py-3 rounded-full bg-[var(--button-bg)] text-white text-sm font-semibold shadow-lg hover:-translate-y-0.5 transition"
-            >
-              View groups
-              <ArrowRight size={16} />
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="dashboard-hero__date">{today}</span>
+            <Link href={canManageGroups ? "/chama/groups" : "/chama/ledger"} className="dashboard-hero__action">
+              {canManageGroups ? <><Plus size={16} /> Create group</> : <><WalletCards size={16} /> View contributions</>}
             </Link>
-            <Link
-              href="/chama/ledger"
-              className="inline-flex items-center gap-2 px-5 py-3 rounded-full border border-[var(--glass-border)] bg-white/70 text-sm font-semibold"
-            >
-              Open ledger
-              <ArrowRight size={16} />
-            </Link>
-            {(isModerator || isAdmin) && (
-              <Link
-                href="/chama/groups"
-                className="inline-flex items-center gap-2 px-5 py-3 rounded-full border border-[var(--glass-border)] bg-white/70 text-sm font-semibold"
-              >
-                <Plus size={16} />
-                New group
-              </Link>
-            )}
           </div>
         </div>
       </section>
 
-      {error && <div className="glass-panel p-4 text-sm text-rose-500">{error}</div>}
+      {error ? <div className="glass-panel border-rose-200 p-4 text-sm text-rose-600" role="alert">{error}</div> : null}
 
-      <section className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
+      <section aria-label="Workspace summary" className="grid grid-cols-2 gap-3 xl:grid-cols-4">
         {[
-          {
-            label: "Active groups",
-            value: summary?.activeGroups ?? 0,
-            icon: Users,
-          },
-          {
-            label: "Next contribution",
-            value: summary?.nextContribution
-              ? `${summary.nextContribution.groupName} · ${formatDate(summary.nextContribution.dueDate)}`
-              : "All clear",
-            icon: Wallet,
-          },
-          {
-            label: "Next payout",
-            value: summary?.nextPayout
-              ? `${summary.nextPayout.groupName} · ${formatDate(summary.nextPayout.dueDate)}`
-              : "No payout soon",
-            icon: CalendarCheck,
-          },
-          {
-            label: "Open pot",
-            value: totalOpenPot ? currencyFormatter.format(totalOpenPot) : "—",
-            icon: Wallet,
-          },
+          { label: "Active groups", value: summary?.activeGroups ?? groups.length, detail: "Groups you belong to", icon: UsersRound, tone: "blue" },
+          { label: "Open rounds", value: rounds.length, detail: "Contribution cycles underway", icon: CircleDollarSign, tone: "cyan" },
+          { label: "Due in 7 days", value: dueSoonCount, detail: "Across your active groups", icon: CalendarClock, tone: "amber" },
+          { label: "Active member seats", value: activeMemberships, detail: "Across these groups", icon: WalletCards, tone: "slate" },
         ].map((stat) => (
-          <div key={stat.label} className="glass-panel dash-card p-4 sm:p-5">
-            <div className="flex items-center justify-between">
-              <p className="text-xs uppercase tracking-[0.2em] text-[var(--muted)]">{stat.label}</p>
-              <stat.icon size={18} className="text-[var(--accent)] dashboard-icon" />
+          <article className="glass-panel dashboard-stat p-4 sm:p-5" key={stat.label}>
+            <div className="flex items-start justify-between gap-3">
+              <div className="min-w-0">
+                <p className="dashboard-stat__label">{stat.label}</p>
+                <p className="mt-2 text-2xl font-semibold tracking-tight tabular-nums sm:text-[28px]">{stat.value}</p>
+                <p className="mt-1 truncate text-xs text-[var(--muted)]">{stat.detail}</p>
+              </div>
+              <span className={`dashboard-stat__icon dashboard-stat__icon--${stat.tone}`}><stat.icon size={18} strokeWidth={1.8} /></span>
             </div>
-            <p className="text-lg sm:text-xl font-semibold mt-3">{stat.value}</p>
-          </div>
+          </article>
         ))}
       </section>
 
-      <section className="grid grid-cols-1 xl:grid-cols-[1.1fr_0.9fr] gap-6">
-        <div className="glass-panel p-6 sm:p-7 space-y-5">
-          <div className="flex items-center justify-between">
+      <section className="grid gap-5 xl:grid-cols-[1.35fr_.9fr]">
+        <article className="glass-panel overflow-hidden">
+          <div className="dashboard-panel-heading">
             <div>
-              <p className="text-xs uppercase tracking-[0.3em] text-[var(--muted)]">Priority timeline</p>
-              <h2 className="text-xl font-semibold mt-2">Upcoming contributions</h2>
+              <p className="dashboard-section-kicker">Current cycle</p>
+              <h3 className="dashboard-section-title">Collection progress</h3>
             </div>
-            <div className="text-right">
-              <p className="text-[10px] uppercase tracking-[0.25em] text-[var(--muted)]">
-                Due soon
-              </p>
-              <p className="text-sm font-semibold text-[var(--foreground)]">{dueSoonCount}</p>
-            </div>
+            <Link href="/chama/ledger" className="dashboard-text-link">Open ledger <ArrowRight size={15} /></Link>
           </div>
-          {upcomingRounds.length === 0 ? (
-            <div className="rounded-2xl border border-[var(--glass-border)] bg-white/60 p-4 text-sm text-[var(--muted)]">
-              No open rounds right now. New rounds will appear here as soon as a cycle starts.
-            </div>
+          {rounds.length === 0 ? (
+            <div className="dashboard-empty m-4 sm:m-5"><CheckCircle2 size={18} /><span>No open contribution rounds at the moment.</span></div>
           ) : (
-            <div className="space-y-3">
-              {upcomingRounds.slice(0, 4).map((round) => (
-                <div
-                  key={round.id}
-                  className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 rounded-2xl border border-[var(--glass-border)] bg-white/60 p-4"
-                >
-                  <div>
-                    <p className="font-semibold">{round.name}</p>
-                    <p className="text-xs text-[var(--muted)] mt-1">
-                      Round {round.roundNumber} · Due {round.dueDate.toLocaleDateString("en-KE", {
-                        month: "short",
-                        day: "numeric",
-                      })}
-                    </p>
-                  </div>
-                  <p className="text-sm font-semibold text-[var(--foreground)]">
-                    {currencyFormatter.format(round.potAmount)}
-                  </p>
-                </div>
-              ))}
+            <div className="divide-y divide-[var(--glass-border)]">
+              {rounds.slice(0, 5).map((group) => {
+                const collected = group.openRound?.totalContributions ?? 0;
+                const target = group.openRound?.potAmount ?? 0;
+                const progress = target > 0 ? Math.min(100, Math.round((collected / target) * 100)) : 0;
+                return (
+                  <Link key={group.id} href={`/chama/groups/${group.id}`} className="dashboard-progress-row">
+                    <div className="flex min-w-0 items-start justify-between gap-4">
+                      <div className="min-w-0">
+                        <p className="truncate text-sm font-semibold">{group.name}</p>
+                        <p className="mt-1 text-xs text-[var(--muted)]">Round {group.openRound?.roundNumber} · {group.frequency}</p>
+                      </div>
+                      <span className="shrink-0 text-sm font-semibold tabular-nums">{progress}%</span>
+                    </div>
+                    <div className="dashboard-progress-track mt-3"><span style={{ width: `${progress}%` }} /></div>
+                    <div className="mt-2 flex items-center justify-between gap-3 text-xs text-[var(--muted)]">
+                      <span>{formatCurrency(collected, group.currency)} collected</span>
+                      <span>Target {formatCurrency(target, group.currency)}</span>
+                    </div>
+                  </Link>
+                );
+              })}
             </div>
           )}
-        </div>
+        </article>
 
-        <div className="glass-panel p-6 sm:p-7 space-y-5">
-          <div>
-            <p className="text-xs uppercase tracking-[0.3em] text-[var(--muted)]">Group pulse</p>
-            <h2 className="text-xl font-semibold mt-2">Quick health check</h2>
-          </div>
-          {groupPulse.length === 0 ? (
-            <div className="rounded-2xl border border-[var(--glass-border)] bg-white/60 p-4 text-sm text-[var(--muted)]">
-              No groups found yet. Create a new chama to get started.
+        <article className="glass-panel overflow-hidden">
+          <div className="dashboard-panel-heading">
+            <div>
+              <p className="dashboard-section-kicker">Round schedule</p>
+              <h3 className="dashboard-section-title">Next contribution dates</h3>
             </div>
+            <span className="dashboard-count-badge">{rounds.length}</span>
+          </div>
+          {rounds.length === 0 ? (
+            <div className="dashboard-empty m-4 sm:m-5"><CalendarClock size={18} /><span>New round dates will appear here.</span></div>
           ) : (
-            <div className="space-y-3">
-              {groupPulse.map((group) => (
-                <div
-                  key={group.id}
-                  className="rounded-2xl border border-[var(--glass-border)] bg-white/60 p-4"
-                >
-                  <div className="flex items-center justify-between">
-                    <p className="font-semibold">{group.name}</p>
-                    <span className="text-[10px] uppercase tracking-[0.2em] text-[var(--muted)]">
-                      {group.status}
-                    </span>
+            <div className="divide-y divide-[var(--glass-border)]">
+              {rounds.slice(0, 5).map((group) => {
+                const days = daysUntil(group.dueAt);
+                const statusClass = days !== null && days < 0 ? "is-overdue" : days !== null && days <= 7 ? "is-due-soon" : "";
+                return (
+                  <Link href={`/chama/groups/${group.id}`} key={group.id} className="dashboard-schedule-row">
+                    <span className="dashboard-date-tile"><span>{formatDate(group.dueAt, { month: "short" }).toUpperCase()}</span><strong>{group.dueAt ? new Date(group.dueAt).getDate() : "—"}</strong></span>
+                    <span className="min-w-0 flex-1"><span className="block truncate text-sm font-semibold">{group.name}</span><span className="mt-1 block text-xs text-[var(--muted)]">Round {group.openRound?.roundNumber}</span></span>
+                    <span className={`dashboard-status ${statusClass}`}>{dueLabel(group.dueAt)}</span>
+                  </Link>
+                );
+              })}
+            </div>
+          )}
+        </article>
+      </section>
+
+      <section className="grid gap-5 xl:grid-cols-[1.35fr_.9fr]">
+        <article className="glass-panel overflow-hidden">
+          <div className="dashboard-panel-heading">
+            <div>
+              <p className="dashboard-section-kicker">Your groups</p>
+              <h3 className="dashboard-section-title">Group performance</h3>
+            </div>
+            <Link href="/chama/groups" className="dashboard-text-link">All groups <ArrowRight size={15} /></Link>
+          </div>
+          {groups.length === 0 ? (
+            <div className="dashboard-empty m-4 sm:m-5"><UsersRound size={18} /><span>No groups are linked to your account yet.</span></div>
+          ) : (
+            <div className="grid gap-3 p-4 sm:grid-cols-2 sm:p-5">
+              {groups.slice(0, 4).map((group) => (
+                <Link href={`/chama/groups/${group.id}`} key={group.id} className="dashboard-group-card">
+                  <div className="flex items-start justify-between gap-3">
+                    <span className="dashboard-group-avatar">{group.name.slice(0, 1).toUpperCase()}</span>
+                    <span className="dashboard-role-badge">{group.role}</span>
                   </div>
-                  <div className="mt-2 flex flex-wrap gap-3 text-xs text-[var(--muted)]">
-                    <span>{group.frequency}</span>
-                    <span>{currencyFormatter.format(group.contributionAmount)}</span>
-                    <span>Role: {group.role}</span>
+                  <p className="mt-3 truncate text-sm font-semibold">{group.name}</p>
+                  <p className="mt-1 text-xs text-[var(--muted)]">{group.membersCount} members · {group.frequency}</p>
+                  <div className="mt-4 flex items-center justify-between border-t border-[var(--glass-border)] pt-3 text-xs">
+                    <span className="text-[var(--muted)]">Contribution</span>
+                    <span className="font-semibold">{formatCurrency(group.contributionAmount, group.currency)}</span>
                   </div>
-                  <div className="mt-3 flex items-center justify-between text-xs">
-                    <span className="text-[var(--muted)]">
-                      Next due: {formatDate(group.openRound?.dueDate)}
-                    </span>
-                    <Link
-                      href={`/chama/groups/${group.id}`}
-                      className="text-[var(--button-bg)] font-semibold"
-                    >
-                      Open
-                    </Link>
-                  </div>
-                </div>
+                  <span className="dashboard-group-open">View group <ArrowUpRight size={14} /></span>
+                </Link>
               ))}
             </div>
           )}
-          {(isModerator || isAdmin) && (
-            <div className="rounded-2xl border border-[var(--glass-border)] bg-white/60 p-4 text-xs text-[var(--muted)]">
-              Need to spin up a new chama? Create a group and invite members in minutes.
+        </article>
+
+        <article className="glass-panel overflow-hidden">
+          <div className="dashboard-panel-heading">
+            <div>
+              <p className="dashboard-section-kicker">Payment records</p>
+              <h3 className="dashboard-section-title">Recent contributions</h3>
+            </div>
+            <Link href="/chama/ledger" className="dashboard-text-link">View all <ArrowRight size={15} /></Link>
+          </div>
+          {activity.length === 0 ? (
+            <div className="dashboard-empty m-4 sm:m-5"><Clock3 size={18} /><span>Recorded payments will show here when available.</span></div>
+          ) : (
+            <div className="divide-y divide-[var(--glass-border)]">
+              {activity.slice(0, 6).map((item) => (
+                <Link href={`/chama/groups/${item.groupId}`} key={item.id} className="dashboard-activity-row">
+                  <span className={`dashboard-activity-icon ${item.status === "paid" ? "is-paid" : "is-pending"}`}>
+                    {item.status === "paid" ? <CheckCircle2 size={16} /> : <Clock3 size={16} />}
+                  </span>
+                  <span className="min-w-0 flex-1">
+                    <span className="block truncate text-sm font-semibold">{item.memberName}</span>
+                    <span className="mt-1 block truncate text-xs text-[var(--muted)]">{item.groupName} · {formatDate(item.paidAt, { month: "short", day: "numeric", year: "numeric" })}</span>
+                  </span>
+                  <span className="shrink-0 text-right"><span className="block text-sm font-semibold tabular-nums">{formatCurrency(item.amount, item.currency)}</span><span className={`mt-1 block text-[10px] font-semibold uppercase tracking-wide ${item.status === "paid" ? "text-emerald-600" : "text-amber-600"}`}>{item.status}</span></span>
+                </Link>
+              ))}
             </div>
           )}
-        </div>
+        </article>
       </section>
+
+      {canManageGroups && groups.length === 0 ? (
+        <div className="dashboard-create-hint">
+          <div><p className="text-sm font-semibold">Set up your first group</p><p className="mt-1 text-xs text-[var(--muted)]">Start a chama and invite members to begin tracking contributions.</p></div>
+          <Link href="/chama/groups" className="dashboard-text-link">Create group <ArrowRight size={15} /></Link>
+        </div>
+      ) : null}
     </div>
   );
 }

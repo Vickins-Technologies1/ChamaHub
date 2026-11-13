@@ -42,6 +42,19 @@ export async function GET() {
       memberId: { $in: Array.from(memberIdSet).map((id) => new Types.ObjectId(id)) },
     }).lean();
 
+    const recentContributions = groupIds.length
+      ? await ChamaContributionModel.find({ groupId: { $in: groupIds } })
+          .sort({ paidAt: -1, createdAt: -1 })
+          .limit(8)
+          .lean()
+      : [];
+    const recentMemberIds = recentContributions.map((item) => item.memberId);
+    const recentMembers = recentMemberIds.length
+      ? await ChamaMemberModel.find({ _id: { $in: recentMemberIds }, groupId: { $in: groupIds } }).lean()
+      : [];
+    const recentMemberMap = new Map(recentMembers.map((member) => [String(member._id), member]));
+    const groupMap = new Map(groups.map((group) => [String(group._id), group]));
+
     const contributionMap = contributions.reduce<Record<string, number>>((acc, item) => {
       acc[`${String(item.roundId)}:${String(item.memberId)}`] = item.amount;
       return acc;
@@ -116,6 +129,20 @@ export async function GET() {
         nextPayout,
       },
       groups: groupSummaries,
+      activity: recentContributions.map((item) => {
+        const member = recentMemberMap.get(String(item.memberId));
+        const group = groupMap.get(String(item.groupId));
+        return {
+          id: String(item._id),
+          groupId: String(item.groupId),
+          groupName: group?.name ?? "Group",
+          memberName: member?.name || member?.email || "Member",
+          amount: item.amount,
+          currency: group?.currency ?? "KES",
+          status: item.status,
+          paidAt: item.paidAt,
+        };
+      }),
     });
   } catch (error) {
     return NextResponse.json({ error: "Unable to load dashboard." }, { status: 500 });

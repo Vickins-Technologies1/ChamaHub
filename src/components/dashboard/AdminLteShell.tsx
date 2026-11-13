@@ -5,7 +5,7 @@ import Link from "next/link";
 import BrandLogo from "../BrandLogo";
 import { usePathname } from "next/navigation";
 import type { LucideIcon } from "lucide-react";
-import { Menu, Moon, Sun, LogOut, Search } from "lucide-react";
+import { Menu, Moon, Sun, LogOut, ChevronDown, ArrowUpRight } from "lucide-react";
 import { useTheme } from "../ThemePreloaderProvider";
 
 export type DashboardNavItem = {
@@ -67,21 +67,37 @@ export default function AdminLteShell({
   const pathname = usePathname() || "/";
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [isMobile, setIsMobile] = useState(false);
+  const [userMenuOpen, setUserMenuOpen] = useState(false);
   const { isDarkMode, toggleTheme } = useTheme();
 
   const activeItem = useMemo(() => pickActiveItem(pathname, navSections), [pathname, navSections]);
 
   useEffect(() => {
+    let wasMobile: boolean | null = null;
     const handleResize = () => {
       const mobile = window.innerWidth < 1024;
       setIsMobile(mobile);
-      if (mobile) setSidebarOpen(false);
-      else setSidebarOpen(true);
+      if (mobile !== wasMobile) {
+        if (mobile) {
+          setSidebarOpen(false);
+        } else {
+          setSidebarOpen(window.localStorage.getItem("chamapulse-sidebar") !== "collapsed");
+        }
+        wasMobile = mobile;
+      }
     };
     handleResize();
     window.addEventListener("resize", handleResize);
     return () => window.removeEventListener("resize", handleResize);
   }, []);
+
+  const toggleSidebar = () => {
+    setSidebarOpen((previous) => {
+      const next = !previous;
+      if (!isMobile) window.localStorage.setItem("chamapulse-sidebar", next ? "expanded" : "collapsed");
+      return next;
+    });
+  };
 
   return (
     <div
@@ -121,23 +137,12 @@ export default function AdminLteShell({
           <button
             type="button"
             aria-label="Toggle sidebar"
+            title={sidebarOpen ? "Collapse sidebar" : "Expand sidebar"}
             className="dash-icon-btn hidden lg:inline-flex"
-            onClick={() => setSidebarOpen((prev) => !prev)}
+            onClick={toggleSidebar}
           >
             {sidebarOpen ? <span className="dash-collapse" /> : <span className="dash-expand" />}
           </button>
-        </div>
-
-        <div className={sidebarOpen ? "dash-search" : "hidden"}>
-          <div className="relative">
-            <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 dash-muted" />
-            <input
-              className="dash-search__input"
-              placeholder="Search"
-              aria-label="Search"
-              disabled
-            />
-          </div>
         </div>
 
         <nav className="dash-nav">
@@ -156,6 +161,9 @@ export default function AdminLteShell({
                     <li key={item.href}>
                       <Link
                         href={item.href}
+                        title={sidebarOpen ? undefined : item.label}
+                        aria-current={active ? "page" : undefined}
+                        onClick={() => { if (isMobile) setSidebarOpen(false); }}
                         className={[
                           "dash-nav-link",
                           active ? "dash-nav-link--active" : "",
@@ -175,7 +183,7 @@ export default function AdminLteShell({
 
           {quickActions?.length ? (
             <div className={sidebarOpen ? "dash-quick" : "hidden"}>
-              <p className="dash-nav__label">Quick actions</p>
+              <p className="dash-nav__label">Shortcuts</p>
               <div className="space-y-2">
                 {quickActions.map((action) => (
                   <Link key={action.href} href={action.href} className="dash-quick-link">
@@ -192,6 +200,8 @@ export default function AdminLteShell({
           <button
             type="button"
             onClick={() => onSignOut()}
+            aria-label="Sign out"
+            title={sidebarOpen ? undefined : "Sign out"}
             className={["dash-signout", sidebarOpen ? "px-3" : "px-2 justify-center"].join(" ")}
           >
             <LogOut size={16} />
@@ -208,7 +218,7 @@ export default function AdminLteShell({
               type="button"
               className="dash-icon-btn lg:hidden"
               aria-label="Toggle sidebar"
-              onClick={() => setSidebarOpen((prev) => !prev)}
+              onClick={toggleSidebar}
             >
               <Menu size={20} />
             </button>
@@ -218,7 +228,13 @@ export default function AdminLteShell({
             </div>
           </div>
 
-          <div className="flex items-center gap-3 sm:gap-5">
+          <div className="flex items-center gap-2 sm:gap-3">
+            {quickActions?.slice(0, 1).map((action) => (
+              <Link key={action.href} href={action.href} className="dash-top-action hidden md:inline-flex">
+                {action.label}
+                <ArrowUpRight size={15} />
+              </Link>
+            ))}
             <button
               type="button"
               onClick={toggleTheme}
@@ -228,28 +244,48 @@ export default function AdminLteShell({
               {isDarkMode ? <Sun size={18} /> : <Moon size={18} />}
             </button>
 
-            <div className="hidden sm:flex items-center gap-3">
-              <div className="text-right leading-tight">
-                <p className="text-sm font-semibold">{user.primary}</p>
-                {user.secondary ? <p className="text-xs dash-muted">{user.secondary}</p> : null}
-              </div>
-              <div className="dash-avatar" aria-hidden="true">
-                {user.primary.slice(0, 1).toUpperCase()}
-              </div>
+            <div className="relative">
+              <button
+                type="button"
+                className="dash-user-button"
+                onClick={() => setUserMenuOpen((open) => !open)}
+                aria-expanded={userMenuOpen}
+                aria-label="Open account menu"
+              >
+                <span className="dash-avatar" aria-hidden="true">{user.primary.slice(0, 1).toUpperCase()}</span>
+                <span className="hidden sm:block max-w-40 text-left leading-tight">
+                  <span className="block truncate text-sm font-semibold">{user.primary}</span>
+                  {user.secondary ? <span className="block text-xs dash-muted">{user.secondary}</span> : null}
+                </span>
+                <ChevronDown size={15} className="hidden sm:block dash-muted" />
+              </button>
+              {userMenuOpen ? (
+                <>
+                  <button type="button" className="fixed inset-0 z-20 cursor-default" aria-label="Close account menu" onClick={() => setUserMenuOpen(false)} />
+                  <div className="dash-user-menu">
+                    <div className="dash-user-menu__identity">
+                      <span className="block truncate text-sm font-semibold">{user.primary}</span>
+                      {user.secondary ? <span className="mt-1 block text-xs dash-muted">{user.secondary}</span> : null}
+                    </div>
+                    <button type="button" className="dash-user-menu__action" onClick={() => { setUserMenuOpen(false); void onSignOut(); }}>
+                      <LogOut size={16} /> Sign out
+                    </button>
+                  </div>
+                </>
+              ) : null}
             </div>
           </div>
         </header>
 
-        <main className="flex-1 p-4 sm:p-5 md:p-6">
-          <div className="mx-auto max-w-6xl">
+        <main className="flex-1 p-4 sm:p-5 xl:p-7">
+          <div className="mx-auto max-w-[1480px]">
             <div className="dash-content-header">
               <div className="min-w-0">
-                <h2 className="dash-content-title truncate">{activeItem?.label ?? "Dashboard"}</h2>
                 <p className="dash-breadcrumb">
                   Home <span className="dash-breadcrumb__sep" /> {activeItem?.label ?? "Dashboard"}
                 </p>
               </div>
-              <div className="dash-badge hidden md:flex">Premium Workspace</div>
+              <div className="dash-badge hidden md:flex">{user.secondary ?? "Workspace"}</div>
             </div>
 
             <div className="mt-4">{children}</div>
