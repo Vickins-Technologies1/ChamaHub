@@ -4,11 +4,6 @@ import { connectMongoose } from "@/lib/mongoose";
 import ChamaGroupModel from "@/lib/models/chama-group";
 import ChamaMemberModel from "@/lib/models/chama-member";
 import ChamaRoundModel from "@/lib/models/chama-round";
-import ChamaContributionModel from "@/lib/models/chama-contribution";
-import ChamaCallModel from "@/lib/models/chama-call";
-import ChamaCallAttendanceModel from "@/lib/models/chama-call-attendance";
-import ChamaMinutesModel from "@/lib/models/chama-minutes";
-import ChamaAnnouncementModel from "@/lib/models/chama-announcement";
 import {
   getSessionUser,
   getGroupMember,
@@ -16,6 +11,8 @@ import {
   isSiteAdmin,
 } from "@/lib/chama-access";
 import { calculatePotAmount, normalizeFrequency, shuffle } from "@/lib/chama-utils";
+import { ensureFinanceIndexes, runInFinancialTransaction, writeFinanceAudit } from "@/lib/finance/service";
+import { toMinorUnits } from "@/lib/finance/money";
 
 type Params = { params: Promise<{ groupId: string }> };
 
@@ -67,7 +64,20 @@ export async function GET(request: NextRequest, { params }: Params) {
     const openRound = (await ChamaRoundModel.findOne({
       groupId: group._id,
       status: "open",
-    }).lean()) as { _id: unknown; recipientMemberId: unknown; roundNumber: number; status: string; dueDate?: Date; totalContributions: number; receivedAt?: Date } | null;
+    }).lean()) as {
+      _id: unknown;
+      recipientMemberId: unknown;
+      roundNumber: number;
+      status: string;
+      dueDate?: Date;
+      totalContributions: number;
+      potAmount: number;
+      receivedAt?: Date;
+      currencySnapshot?: string | null;
+      expectedTotalMinor?: number | null;
+      snapshotStatus?: string;
+      eligibleMemberIds?: unknown[];
+    } | null;
 
     return NextResponse.json({
       group: {
@@ -86,7 +96,7 @@ export async function GET(request: NextRequest, { params }: Params) {
       },
       stats: {
         membersCount: activeCount,
-        potAmount: calculatePotAmount(group, activeCount),
+        potAmount: openRound?.potAmount ?? calculatePotAmount(group, activeCount),
       },
       openRound: openRound
         ? {
@@ -97,6 +107,10 @@ export async function GET(request: NextRequest, { params }: Params) {
             dueDate: openRound.dueDate,
             totalContributions: openRound.totalContributions,
             receivedAt: openRound.receivedAt,
+            currency: openRound.currencySnapshot,
+            expectedTotalMinor: openRound.expectedTotalMinor,
+            snapshotStatus: openRound.snapshotStatus,
+            eligibleMemberIds: (openRound.eligibleMemberIds ?? []).map(String),
           }
         : null,
     });
@@ -118,6 +132,7 @@ export async function PUT(request: NextRequest, { params }: Params) {
     }
 
     await connectMongoose();
+    await ensureFinanceIndexes();
 
     const group = await ChamaGroupModel.findById(groupId);
     if (!group) {
@@ -131,18 +146,57 @@ export async function PUT(request: NextRequest, { params }: Params) {
     }
 
     const body = await request.json().catch(() => ({}));
+    const changesRoundOrFinancialSettings = [
+      "contributionAmount", "currency", "frequency", "numberOfMembers", "startDate", "status",
+      "rotationType", "rotationOrder", "shuffleRotation",
+    ].some((key) => body[key] !== undefined);
+    if (changesRoundOrFinancialSettings && !isAdmin && !hasGroupRole(member, ["admin"])) {
+      return NextResponse.json({ error: "Only group administrators can change financial settings and payout rotation." }, { status: 403 });
+    }
+    const nextConfiguredCurrency = String(body.currency ?? group.currency).trim().toUpperCase();
+    const financialValuesChanged =
+      (body.contributionAmount !== undefined && Number(body.contributionAmount) !== group.contributionAmount) ||
+      (body.currency !== undefined && nextConfiguredCurrency !== group.currency) ||
+      (body.frequency !== undefined && normalizeFrequency(body.frequency) !== group.frequency);
+    if (financialValuesChanged && !String(body.reason ?? "").trim()) {
+      return NextResponse.json({ error: "Provide a reason for changing contribution or currency settings." }, { status: 400 });
+    }
+    const previousFinanceSettings = {
+      contributionAmount: group.contributionAmount,
+      currency: group.currency,
+      frequency: group.frequency,
+    };
+    const previousGroupStatus = group.status;
     if (body.name !== undefined) group.name = String(body.name).trim();
     if (body.description !== undefined) group.description = String(body.description).trim();
     if (body.contributionAmount !== undefined) {
-      group.contributionAmount = Number(body.contributionAmount);
+      const nextAmount = Number(body.contributionAmount);
+      try {
+        toMinorUnits(body.contributionAmount, String(body.currency ?? group.currency).toUpperCase());
+      } catch (error) {
+        return NextResponse.json({ error: error instanceof Error ? error.message : "Invalid contribution amount." }, { status: 400 });
+      }
+      group.contributionAmount = nextAmount;
     }
     if (body.frequency !== undefined) group.frequency = normalizeFrequency(body.frequency);
     if (body.numberOfMembers !== undefined) {
       group.numberOfMembers = Number(body.numberOfMembers);
     }
     if (body.startDate !== undefined) group.startDate = new Date(body.startDate);
-    if (body.currency !== undefined) group.currency = String(body.currency || "KES");
-    if (body.status !== undefined) group.status = String(body.status);
+    if (body.currency !== undefined) {
+      const nextCurrency = String(body.currency || "KES").trim().toUpperCase();
+      try {
+        toMinorUnits(body.contributionAmount ?? group.contributionAmount, nextCurrency);
+      } catch (error) {
+        return NextResponse.json({ error: error instanceof Error ? error.message : "Invalid currency." }, { status: 400 });
+      }
+      group.currency = nextCurrency;
+    }
+    if (body.status === "active" || body.status === "archived") {
+      group.status = body.status;
+      group.archivedAt = body.status === "archived" ? group.archivedAt ?? new Date() : null;
+      group.archivedBy = body.status === "archived" ? group.archivedBy ?? user.id : null;
+    }
 
     if (body.rotationType === "random" || body.rotationType === "manual") {
       group.rotationType = body.rotationType;
@@ -160,10 +214,42 @@ export async function PUT(request: NextRequest, { params }: Params) {
       group.rotationType = "random";
     }
 
-    await group.save();
+    await runInFinancialTransaction(async (session) => {
+      await group.save({ session });
+      if (
+        previousFinanceSettings.contributionAmount !== group.contributionAmount ||
+        previousFinanceSettings.currency !== group.currency ||
+        previousFinanceSettings.frequency !== group.frequency
+      ) {
+        await writeFinanceAudit({
+          groupId: group._id as Types.ObjectId,
+          actorId: user.id,
+          action: "group.financial_configuration_changed",
+          entityType: "group",
+          entityId: String(group._id),
+          reason: String(body.reason ?? "").trim().slice(0, 500),
+          previousValues: previousFinanceSettings,
+          newValues: { contributionAmount: group.contributionAmount, currency: group.currency, frequency: group.frequency },
+        }, session);
+      }
+      if (previousGroupStatus !== group.status) {
+        await writeFinanceAudit({
+          groupId: group._id as Types.ObjectId,
+          actorId: user.id,
+          action: group.status === "archived" ? "group.archived" : "group.reactivated",
+          entityType: "group",
+          entityId: String(group._id),
+          previousValues: { status: previousGroupStatus },
+          newValues: { status: group.status },
+        }, session);
+      }
+    });
 
     return NextResponse.json({ ok: true });
   } catch (error) {
+    if (error instanceof Error && /Transaction numbers are only allowed|replica set|mongos/i.test(error.message)) {
+      return NextResponse.json({ error: "Group updates require MongoDB replica-set or sharded-cluster transaction support." }, { status: 503 });
+    }
     return NextResponse.json({ error: "Unable to update group." }, { status: 500 });
   }
 }
@@ -181,6 +267,7 @@ export async function DELETE(request: NextRequest, { params }: Params) {
     }
 
     await connectMongoose();
+    await ensureFinanceIndexes();
 
     const group = await ChamaGroupModel.findById(groupId);
     if (!group) {
@@ -193,19 +280,30 @@ export async function DELETE(request: NextRequest, { params }: Params) {
       return NextResponse.json({ error: "Access denied." }, { status: 403 });
     }
 
-    await Promise.all([
-      ChamaGroupModel.deleteOne({ _id: group._id }),
-      ChamaMemberModel.deleteMany({ groupId: group._id }),
-      ChamaRoundModel.deleteMany({ groupId: group._id }),
-      ChamaContributionModel.deleteMany({ groupId: group._id }),
-      ChamaCallModel.deleteMany({ groupId: group._id }),
-      ChamaCallAttendanceModel.deleteMany({ groupId: group._id }),
-      ChamaMinutesModel.deleteMany({ groupId: group._id }),
-      ChamaAnnouncementModel.deleteMany({ groupId: group._id }),
-    ]);
+    const previousStatus = group.status;
+    group.status = "archived";
+    group.archivedAt = group.archivedAt ?? new Date();
+    group.archivedBy = group.archivedBy ?? user.id;
+    await runInFinancialTransaction(async (session) => {
+      await group.save({ session });
+      if (previousStatus !== "archived") {
+        await writeFinanceAudit({
+          groupId: group._id as Types.ObjectId,
+          actorId: user.id,
+          action: "group.archived",
+          entityType: "group",
+          entityId: String(group._id),
+          previousValues: { status: previousStatus },
+          newValues: { status: "archived" },
+        }, session);
+      }
+    });
 
-    return NextResponse.json({ ok: true });
+    return NextResponse.json({ ok: true, archived: true });
   } catch (error) {
+    if (error instanceof Error && /Transaction numbers are only allowed|replica set|mongos/i.test(error.message)) {
+      return NextResponse.json({ error: "Group archival requires MongoDB replica-set or sharded-cluster transaction support." }, { status: 503 });
+    }
     return NextResponse.json({ error: "Unable to delete group." }, { status: 500 });
   }
 }

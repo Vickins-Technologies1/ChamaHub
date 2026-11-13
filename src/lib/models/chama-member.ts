@@ -1,4 +1,4 @@
-import { Schema, model, models, type InferSchemaType } from "mongoose";
+import { Schema, model, models, type InferSchemaType, type Model } from "mongoose";
 
 const MemberSchema = new Schema(
   {
@@ -28,6 +28,6 @@ MemberSchema.index({ groupId: 1, email: 1 });
 
 export type ChamaMember = InferSchemaType<typeof MemberSchema>;
 
-const ChamaMemberModel = models.ChamaMember || model("ChamaMember", MemberSchema);
+const ChamaMemberModel = (models.ChamaMember as Model<ChamaMember> | undefined) || model<ChamaMember>("ChamaMember", MemberSchema);
 
 export default ChamaMemberModel;

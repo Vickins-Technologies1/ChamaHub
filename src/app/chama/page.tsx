@@ -14,6 +14,7 @@ import {
   WalletCards,
 } from "lucide-react";
 import { authClient } from "@/lib/auth-client";
+import { fromMinorUnits, formatMinorUnits } from "@/lib/finance/money";
 
 type DashboardSummary = {
   activeGroups: number;
@@ -37,6 +38,18 @@ type GroupSummary = {
     dueDate?: string;
     totalContributions: number;
     potAmount: number;
+    totalVerifiedContributionsMinor: number;
+    expectedTotalMinor?: number;
+    currency?: string;
+    snapshotStatus?: string;
+    payoutStatus?: string | null;
+    myFinancials?: {
+      expectedMinor: number;
+      verifiedMinor: number;
+      pendingMinor: number;
+      outstandingMinor: number;
+      status: string;
+    } | null;
   } | null;
 };
 
@@ -47,15 +60,28 @@ type RecentActivity = {
   memberName: string;
   amount: number;
   currency: string;
-  status: "paid" | "pending";
+  status: string;
   paidAt?: string;
+  type?: string;
+};
+
+type RecentPayout = {
+  id: string;
+  groupId: string;
+  groupName: string;
+  memberName: string;
+  amountMinor: number | null;
+  currency: string;
+  status: string;
+  paidAt?: string;
+  reference: string;
 };
 
 const formatDate = (value?: string, options: Intl.DateTimeFormatOptions = { month: "short", day: "numeric" }) =>
   value ? new Date(value).toLocaleDateString("en-KE", options) : "Date not set";
 
 const formatCurrency = (amount: number, currency = "KES") =>
-  new Intl.NumberFormat("en-KE", { style: "currency", currency, maximumFractionDigits: 0 }).format(amount);
+  new Intl.NumberFormat("en-KE", { style: "currency", currency }).format(amount);
 
 function daysUntil(value?: string) {
   if (!value) return null;
@@ -78,6 +104,7 @@ export default function ChamaDashboardPage() {
   const [summary, setSummary] = useState<DashboardSummary | null>(null);
   const [groups, setGroups] = useState<GroupSummary[]>([]);
   const [activity, setActivity] = useState<RecentActivity[]>([]);
+  const [payouts, setPayouts] = useState<RecentPayout[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
@@ -94,6 +121,7 @@ export default function ChamaDashboardPage() {
       setSummary(data.summary ?? null);
       setGroups(data.groups ?? []);
       setActivity(data.activity ?? []);
+      setPayouts(data.payouts ?? []);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Unable to load dashboard.");
     } finally {
@@ -196,9 +224,10 @@ export default function ChamaDashboardPage() {
           ) : (
             <div className="divide-y divide-[var(--glass-border)]">
               {rounds.slice(0, 5).map((group) => {
-                const collected = group.openRound?.totalContributions ?? 0;
-                const target = group.openRound?.potAmount ?? 0;
-                const progress = target > 0 ? Math.min(100, Math.round((collected / target) * 100)) : 0;
+                const roundCurrency = group.openRound?.currency ?? group.currency;
+                const collectedMinor = group.openRound?.totalVerifiedContributionsMinor ?? 0;
+                const targetMinor = group.openRound?.expectedTotalMinor ?? null;
+                const progress = targetMinor && targetMinor > 0 ? Math.min(100, Math.round((collectedMinor / targetMinor) * 100)) : 0;
                 return (
                   <Link key={group.id} href={`/chama/groups/${group.id}`} className="dashboard-progress-row">
                     <div className="flex min-w-0 items-start justify-between gap-4">
@@ -210,9 +239,22 @@ export default function ChamaDashboardPage() {
                     </div>
                     <div className="dashboard-progress-track mt-3"><span style={{ width: `${progress}%` }} /></div>
                     <div className="mt-2 flex items-center justify-between gap-3 text-xs text-[var(--muted)]">
-                      <span>{formatCurrency(collected, group.currency)} collected</span>
-                      <span>Target {formatCurrency(target, group.currency)}</span>
+                      <span>{formatMinorUnits(collectedMinor, roundCurrency)} verified</span>
+                      <span>{targetMinor == null ? "Legacy round needs review" : `Target ${formatMinorUnits(targetMinor, roundCurrency)}`}</span>
                     </div>
+                    {group.openRound?.myFinancials && (
+                      <div className="mt-2 grid grid-cols-3 gap-2 text-[11px] text-[var(--muted)]">
+                        <span>Expected {formatMinorUnits(group.openRound.myFinancials.expectedMinor, roundCurrency)}</span>
+                        <span>Paid {formatMinorUnits(group.openRound.myFinancials.verifiedMinor, roundCurrency)}</span>
+                        <span>Owed {formatMinorUnits(group.openRound.myFinancials.outstandingMinor, roundCurrency)}</span>
+                      </div>
+                    )}
+                    {group.openRound?.myFinancials && (
+                      <div className="mt-2 flex items-center justify-between text-xs">
+                        <span className="capitalize text-[var(--muted)]">{group.openRound.myFinancials.status.replaceAll("_", " ")}</span>
+                        <a href={`/api/chama/groups/${group.id}/statement`} onClick={(event) => event.stopPropagation()} className="font-semibold text-[var(--button-bg)]">Personal statement</a>
+                      </div>
+                    )}
                   </Link>
                 );
               })}
@@ -294,19 +336,39 @@ export default function ChamaDashboardPage() {
             <div className="divide-y divide-[var(--glass-border)]">
               {activity.slice(0, 6).map((item) => (
                 <Link href={`/chama/groups/${item.groupId}`} key={item.id} className="dashboard-activity-row">
-                  <span className={`dashboard-activity-icon ${item.status === "paid" ? "is-paid" : "is-pending"}`}>
-                    {item.status === "paid" ? <CheckCircle2 size={16} /> : <Clock3 size={16} />}
+                  <span className={`dashboard-activity-icon ${item.status === "verified" ? "is-paid" : "is-pending"}`}>
+                    {item.status === "verified" ? <CheckCircle2 size={16} /> : <Clock3 size={16} />}
                   </span>
                   <span className="min-w-0 flex-1">
                     <span className="block truncate text-sm font-semibold">{item.memberName}</span>
                     <span className="mt-1 block truncate text-xs text-[var(--muted)]">{item.groupName} · {formatDate(item.paidAt, { month: "short", day: "numeric", year: "numeric" })}</span>
                   </span>
-                  <span className="shrink-0 text-right"><span className="block text-sm font-semibold tabular-nums">{formatCurrency(item.amount, item.currency)}</span><span className={`mt-1 block text-[10px] font-semibold uppercase tracking-wide ${item.status === "paid" ? "text-emerald-600" : "text-amber-600"}`}>{item.status}</span></span>
+                  <span className="shrink-0 text-right"><span className="block text-sm font-semibold tabular-nums">{formatCurrency(item.amount, item.currency)}</span><span className={`mt-1 block text-[10px] font-semibold uppercase tracking-wide ${item.status === "verified" ? "text-emerald-600" : "text-amber-600"}`}>{item.status.replaceAll("_", " ")}</span></span>
                 </Link>
               ))}
             </div>
           )}
         </article>
+      </section>
+
+      <section className="glass-panel overflow-hidden">
+        <div className="dashboard-panel-heading">
+          <div><p className="dashboard-section-kicker">Recipient history</p><h3 className="dashboard-section-title">Your payouts</h3></div>
+          <Link href="/chama/ledger" className="dashboard-text-link">Statements <ArrowRight size={15} /></Link>
+        </div>
+        {payouts.length === 0 ? (
+          <div className="dashboard-empty m-4 sm:m-5"><WalletCards size={18} /><span>No payout records are linked to your member accounts yet.</span></div>
+        ) : (
+          <div className="divide-y divide-[var(--glass-border)]">
+            {payouts.map((payout) => (
+              <Link href={`/chama/groups/${payout.groupId}`} key={payout.id} className="dashboard-activity-row">
+                <span className={`dashboard-activity-icon ${payout.status === "confirmed" ? "is-paid" : "is-pending"}`}>{payout.status === "confirmed" ? <CheckCircle2 size={16} /> : <Clock3 size={16} />}</span>
+                <span className="min-w-0 flex-1"><span className="block truncate text-sm font-semibold">{payout.groupName}</span><span className="mt-1 block truncate text-xs text-[var(--muted)]">{payout.reference || "Reference pending"} · {formatDate(payout.paidAt, { month: "short", day: "numeric", year: "numeric" })}</span></span>
+                <span className="shrink-0 text-right"><span className="block text-sm font-semibold">{payout.amountMinor == null ? "Amount unknown" : formatMinorUnits(payout.amountMinor, payout.currency)}</span><span className="mt-1 block text-[10px] font-semibold uppercase">{payout.status.replaceAll("_", " ")}</span></span>
+              </Link>
+            ))}
+          </div>
+        )}
       </section>
 
       {canManageGroups && groups.length === 0 ? (

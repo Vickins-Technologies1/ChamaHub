@@ -4,9 +4,10 @@ import { connectMongoose } from "@/lib/mongoose";
 import ChamaGroupModel from "@/lib/models/chama-group";
 import ChamaMemberModel from "@/lib/models/chama-member";
 import ChamaRoundModel from "@/lib/models/chama-round";
-import ChamaContributionModel from "@/lib/models/chama-contribution";
+import ChamaFinancialTransactionModel from "@/lib/models/chama-financial-transaction";
 import { getSessionUser, linkMemberToUser } from "@/lib/chama-access";
-import { calculatePotAmount } from "@/lib/chama-utils";
+import { fromMinorUnits } from "@/lib/finance/money";
+import { getContributionStatus, getOutstandingMinor } from "@/lib/finance/ledger";
 
 export async function GET() {
   try {
@@ -37,28 +38,63 @@ export async function GET() {
 
     const memberIdSet = new Set(members.map((member) => String(member._id)));
     const roundIds = rounds.map((round) => round._id);
-    const contributions = await ChamaContributionModel.find({
+    const contributions = await ChamaFinancialTransactionModel.find({
       roundId: { $in: roundIds },
       memberId: { $in: Array.from(memberIdSet).map((id) => new Types.ObjectId(id)) },
+      type: "contribution",
+      status: { $in: ["verified", "pending_verification"] },
     }).lean();
 
     const recentContributions = groupIds.length
-      ? await ChamaContributionModel.find({ groupId: { $in: groupIds } })
-          .sort({ paidAt: -1, createdAt: -1 })
+      ? await ChamaFinancialTransactionModel.find({ groupId: { $in: groupIds } })
+          .sort({ transactionDate: -1, createdAt: -1 })
           .limit(8)
           .lean()
       : [];
-    const recentMemberIds = recentContributions.map((item) => item.memberId);
+    const recentPayouts = groupIds.length && members.length
+      ? await ChamaFinancialTransactionModel.find({
+          groupId: { $in: groupIds },
+          memberId: { $in: members.map((member) => member._id) },
+          type: "payout",
+          legacy: false,
+        }).sort({ transactionDate: -1, createdAt: -1 }).limit(6).lean()
+      : [];
+    const allActivityMemberIds = [...recentContributions, ...recentPayouts].map((item) => item.memberId).filter(Boolean);
+    const recentMemberIds = [...new Set(allActivityMemberIds.map(String))].map((id) => new Types.ObjectId(id));
     const recentMembers = recentMemberIds.length
       ? await ChamaMemberModel.find({ _id: { $in: recentMemberIds }, groupId: { $in: groupIds } }).lean()
       : [];
     const recentMemberMap = new Map(recentMembers.map((member) => [String(member._id), member]));
     const groupMap = new Map(groups.map((group) => [String(group._id), group]));
 
-    const contributionMap = contributions.reduce<Record<string, number>>((acc, item) => {
-      acc[`${String(item.roundId)}:${String(item.memberId)}`] = item.amount;
+    const contributionMap = contributions.reduce<Record<string, { verifiedMinor: number; pendingMinor: number }>>((acc, item) => {
+      const key = `${String(item.roundId)}:${String(item.memberId)}`;
+      acc[key] ??= { verifiedMinor: 0, pendingMinor: 0 };
+      if (item.status === "verified") acc[key].verifiedMinor += item.amountMinor ?? 0;
+      else acc[key].pendingMinor += item.amountMinor ?? 0;
       return acc;
     }, {});
+    const payouts = rounds.length
+      ? await ChamaFinancialTransactionModel.find({
+          roundId: { $in: rounds.map((round) => round._id) },
+          type: "payout",
+          legacy: false,
+        }).lean()
+      : [];
+    const payoutMap = new Map(payouts.map((item) => [String(item.roundId), item]));
+    const verifiedRoundTotals = rounds.length
+      ? await ChamaFinancialTransactionModel.aggregate([
+          {
+            $match: {
+              roundId: { $in: rounds.map((round) => round._id) },
+              type: "contribution",
+              status: "verified",
+            },
+          },
+          { $group: { _id: "$roundId", totalMinor: { $sum: "$amountMinor" } } },
+        ])
+      : [];
+    const verifiedRoundMap = new Map(verifiedRoundTotals.map((item) => [String(item._id), item.totalMinor as number]));
 
     let nextContribution: { dueDate: Date; groupName: string } | null = null;
     let nextPayout: { dueDate: Date; groupName: string } | null = null;
@@ -67,18 +103,18 @@ export async function GET() {
       const groupId = String(group._id);
       const openRound = rounds.find((round) => String(round.groupId) === groupId);
       const groupMembers = members.filter((member) => String(member.groupId) === groupId);
-      const activeCount = groupMembers.filter((member) => member.status === "active").length;
       const myMember = groupMembers.find(
         (member) =>
           member.userId === user.id ||
           (user.email && member.email === user.email.toLowerCase())
       );
-      const contributed =
-        openRound && myMember
-          ? Boolean(contributionMap[`${String(openRound._id)}:${String(myMember._id)}`])
-          : false;
+      const obligation = openRound?.memberObligations?.find((item) => String(item.memberId) === String(myMember?._id));
+      const payment = openRound && myMember
+        ? contributionMap[`${String(openRound._id)}:${String(myMember._id)}`] ?? { verifiedMinor: 0, pendingMinor: 0 }
+        : { verifiedMinor: 0, pendingMinor: 0 };
+      const outstandingMinor = obligation ? getOutstandingMinor(obligation.amountMinor, payment.verifiedMinor) : 0;
 
-      if (openRound && myMember && !contributed) {
+      if (openRound && myMember && obligation && outstandingMinor > 0) {
         if (!nextContribution || (openRound.dueDate && openRound.dueDate < nextContribution.dueDate)) {
           nextContribution = {
             dueDate: openRound.dueDate || new Date(),
@@ -87,11 +123,12 @@ export async function GET() {
         }
       }
 
+      const payout = openRound ? payoutMap.get(String(openRound._id)) : null;
       if (
         openRound &&
         myMember &&
         String(openRound.recipientMemberId) === String(myMember._id) &&
-        !openRound.receivedAt
+        payout?.status !== "confirmed"
       ) {
         if (!nextPayout || (openRound.dueDate && openRound.dueDate < nextPayout.dueDate)) {
           nextPayout = {
@@ -116,7 +153,19 @@ export async function GET() {
               recipientMemberId: String(openRound.recipientMemberId),
               dueDate: openRound.dueDate,
               totalContributions: openRound.totalContributions,
-              potAmount: calculatePotAmount(group, activeCount),
+              totalVerifiedContributionsMinor: verifiedRoundMap.get(String(openRound._id)) ?? 0,
+              potAmount: openRound.potAmount,
+              currency: openRound.currencySnapshot,
+              expectedTotalMinor: openRound.expectedTotalMinor,
+              snapshotStatus: openRound.snapshotStatus,
+              payoutStatus: payout?.status ?? null,
+              myFinancials: obligation ? {
+                expectedMinor: obligation.amountMinor,
+                verifiedMinor: payment.verifiedMinor,
+                pendingMinor: payment.pendingMinor,
+                outstandingMinor,
+                status: getContributionStatus(obligation.amountMinor, payment.verifiedMinor, payment.pendingMinor),
+              } : null,
             }
           : null,
       };
@@ -137,10 +186,32 @@ export async function GET() {
           groupId: String(item.groupId),
           groupName: group?.name ?? "Group",
           memberName: member?.name || member?.email || "Member",
-          amount: item.amount,
-          currency: group?.currency ?? "KES",
+          currency: item.currency ?? group?.currency ?? "KES",
           status: item.status,
-          paidAt: item.paidAt,
+          paidAt: item.transactionDate,
+          type: item.type,
+          direction: item.direction,
+          amountMinor: item.amountMinor,
+          amount: item.amountMinor != null
+            ? fromMinorUnits(item.amountMinor, item.currency)
+            : item.legacyAmountMajor ?? null,
+          recordedBy: item.recordedBy,
+          reference: item.reference,
+        };
+      }),
+      payouts: recentPayouts.map((item) => {
+        const member = recentMemberMap.get(String(item.memberId));
+        const group = groupMap.get(String(item.groupId));
+        return {
+          id: String(item._id),
+          groupId: String(item.groupId),
+          groupName: group?.name ?? "Group",
+          memberName: member?.name || member?.email || "Member",
+          amountMinor: item.amountMinor,
+          currency: item.currency,
+          status: item.status,
+          paidAt: item.transactionDate,
+          reference: item.reference,
         };
       }),
     });

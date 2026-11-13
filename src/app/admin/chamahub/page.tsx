@@ -201,7 +201,7 @@ export default function ChamaPulseAdminPage() {
             icon: CalendarCheck,
           },
           {
-              label: "Contribution entries",
+              label: "Verified contribution entries",
               value: metrics ? metrics.totalContributions.toLocaleString("en-KE") : "--",
             icon: Wallet,
           },

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   ArrowRight,
   Receipt,
@@ -13,9 +13,8 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 import { authClient } from "@/lib/auth-client";
-import { PDFDownloadLink } from "@react-pdf/renderer";
-import TreasurerLedgerPdf from "@/components/chama/TreasurerLedgerPdf";
 import Modal from "@/components/Modal";
+import { fromMinorUnits, formatMinorUnits } from "@/lib/finance/money";
 
 type GroupSummary = {
   id: string;
@@ -48,6 +47,9 @@ type OpenRound = {
   dueDate?: string;
   totalContributions: number;
   receivedAt?: string;
+  expectedTotalMinor?: number;
+  currency?: string;
+  snapshotStatus?: string;
 };
 
 type Member = {
@@ -66,6 +68,34 @@ type Contribution = {
   method: string;
   reference?: string;
   paidAt?: string;
+  status: string;
+  currency?: string;
+  recordedBy?: string;
+};
+
+type Payout = {
+  id: string;
+  roundId: string;
+  memberId: string;
+  amountMinor: number | null;
+  currency: string;
+  status: string;
+  reference: string;
+  method: string;
+};
+
+type Reconciliation = {
+  _id: string;
+  periodStart: string;
+  periodEnd: string;
+  currency: string;
+  recordedContributionsMinor: number;
+  verifiedContributionsMinor: number;
+  recordedPayoutsMinor: number;
+  confirmedPayoutsMinor: number;
+  outstandingObligationsMinor: number;
+  discrepancyMinor: number | null;
+  status: string;
 };
 
 const inputClass = "glass-input";
@@ -81,11 +111,25 @@ export default function TreasurerPanelPage() {
   const [openRound, setOpenRound] = useState<OpenRound | null>(null);
   const [members, setMembers] = useState<Member[]>([]);
   const [contributions, setContributions] = useState<Contribution[]>([]);
+  const [payout, setPayout] = useState<Payout | null>(null);
+  const [financeSummary, setFinanceSummary] = useState<Record<string, unknown> | null>(null);
+  const [reconciliations, setReconciliations] = useState<Reconciliation[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
   const [pending, setPending] = useState<Record<string, boolean>>({});
   const [recordOpen, setRecordOpen] = useState(false);
+  const [payoutForm, setPayoutForm] = useState({ amount: "", method: "manual", reference: "" });
+  const [reconciliationForm, setReconciliationForm] = useState({
+    periodStart: new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().slice(0, 10),
+    periodEnd: new Date().toISOString().slice(0, 10),
+    openingBalance: "",
+    reportedClosingBalance: "",
+    notes: "",
+  });
+  const contributionKeyRef = useRef<string | null>(null);
+  const payoutKeyRef = useRef<string | null>(null);
+  const reconciliationKeyRef = useRef<string | null>(null);
 
   const [recordForm, setRecordForm] = useState({
     memberId: "",
@@ -101,7 +145,7 @@ export default function TreasurerPanelPage() {
   });
 
   const treasurerGroups = useMemo(
-    () => groups.filter((group) => group.membership?.role === "treasurer"),
+    () => groups.filter((group) => ["treasurer", "admin"].includes(group.membership?.role ?? "")),
     [groups]
   );
 
@@ -110,7 +154,7 @@ export default function TreasurerPanelPage() {
       new Intl.NumberFormat("en-KE", {
         style: "currency",
         currency: groupDetail?.currency ?? "KES",
-        maximumFractionDigits: 0,
+        maximumFractionDigits: new Intl.NumberFormat("en", { style: "currency", currency: groupDetail?.currency ?? "KES" }).resolvedOptions().maximumFractionDigits,
       }),
     [groupDetail?.currency]
   );
@@ -141,22 +185,43 @@ export default function TreasurerPanelPage() {
     if (!groupId) return;
     setError("");
     try {
-      const [groupRes, membersRes, contribRes] = await Promise.all([
+      const [groupRes, membersRes, contribRes, payoutRes, financeRes, reconciliationRes] = await Promise.all([
         fetch(`/api/chama/groups/${groupId}`, { cache: "no-store" }),
         fetch(`/api/chama/groups/${groupId}/members`, { cache: "no-store" }),
-        fetch(`/api/chama/groups/${groupId}/contributions`, { cache: "no-store" }),
+        fetch(`/api/chama/groups/${groupId}/contributions?limit=100`, { cache: "no-store" }),
+        fetch(`/api/chama/groups/${groupId}/payouts`, { cache: "no-store" }),
+        fetch(`/api/chama/groups/${groupId}/finance/summary`, { cache: "no-store" }),
+        fetch(`/api/chama/groups/${groupId}/reconciliation`, { cache: "no-store" }),
       ]);
       const groupData = await groupRes.json();
       const membersData = await membersRes.json();
       const contribData = await contribRes.json();
+      const payoutData = await payoutRes.json();
+      const financeData = await financeRes.json();
+      const reconciliationData = await reconciliationRes.json();
       if (!groupRes.ok) throw new Error(groupData?.error || "Unable to load group.");
       if (!membersRes.ok) throw new Error(membersData?.error || "Unable to load members.");
       if (!contribRes.ok) throw new Error(contribData?.error || "Unable to load contributions.");
+      if (!payoutRes.ok) throw new Error(payoutData?.error || "Unable to load payouts.");
+      if (!financeRes.ok) throw new Error(financeData?.error || "Unable to load financial summary.");
+      if (!reconciliationRes.ok) throw new Error(reconciliationData?.error || "Unable to load reconciliation data.");
       setGroupDetail(groupData.group ?? null);
       setGroupStats(groupData.stats ?? null);
       setOpenRound(groupData.openRound ?? null);
       setMembers(membersData.members ?? []);
       setContributions(contribData.contributions ?? []);
+      const currentPayout = (payoutData.payouts ?? []).find((item: Payout) => item.roundId === groupData.openRound?.id) ?? null;
+      setPayout(currentPayout);
+      setFinanceSummary(financeData.summary ?? null);
+      setReconciliations(reconciliationData.reconciliations ?? []);
+      if (groupData.openRound?.expectedTotalMinor && groupData.openRound?.currency) {
+        setPayoutForm((prev) => ({
+          ...prev,
+          amount: currentPayout?.amountMinor != null
+            ? String(fromMinorUnits(currentPayout.amountMinor, currentPayout.currency))
+            : String(fromMinorUnits(groupData.openRound.expectedTotalMinor, groupData.openRound.currency)),
+        }));
+      }
       setRecordForm((prev) => ({
         ...prev,
         memberId: membersData.members?.[0]?.id ?? "",
@@ -193,6 +258,7 @@ export default function TreasurerPanelPage() {
     const pendingKey = "contribution-record";
     setPendingKey(pendingKey, true);
     try {
+      contributionKeyRef.current ??= crypto.randomUUID();
       const response = await fetch(`/api/chama/groups/${selectedGroup}/contributions`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -202,15 +268,166 @@ export default function TreasurerPanelPage() {
           amount: recordForm.amount,
           method: recordForm.method,
           reference: recordForm.reference,
+          idempotencyKey: contributionKeyRef.current,
         }),
       });
       const data = await response.json();
       if (!response.ok) throw new Error(data?.error || "Unable to record contribution.");
-      setMessage("Contribution recorded.");
+      setMessage("Payment submitted for treasury verification.");
+      contributionKeyRef.current = null;
       setRecordOpen(false);
       await loadGroupDetail(selectedGroup);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Unable to record contribution.");
+    } finally {
+      setPendingKey(pendingKey, false);
+    }
+  };
+
+  const handleVerifyContribution = async (contribution: Contribution) => {
+    setError("");
+    setMessage("");
+    const reason = window.prompt("What evidence did you review to verify this payment?");
+    if (!reason?.trim()) return;
+    try {
+      const response = await fetch(`/api/chama/groups/${selectedGroup}/contributions/${contribution.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "verify", reason }),
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data?.error || "Unable to verify contribution.");
+      setMessage("Contribution verified.");
+      await loadGroupDetail(selectedGroup);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Unable to verify contribution.");
+    }
+  };
+
+  const handleCreatePayout = async () => {
+    if (!openRound?.id || !payoutForm.amount || !payoutForm.method) return;
+    setError("");
+    setMessage("");
+    const pendingKey = "payout-create";
+    setPendingKey(pendingKey, true);
+    try {
+      payoutKeyRef.current ??= crypto.randomUUID();
+      const response = await fetch(`/api/chama/groups/${selectedGroup}/payouts`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          roundId: openRound.id,
+          amount: payoutForm.amount,
+          method: payoutForm.method,
+          reference: payoutForm.reference,
+          idempotencyKey: payoutKeyRef.current,
+        }),
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data?.error || "Unable to initiate payout.");
+      payoutKeyRef.current = null;
+      setMessage("Payout recorded. Mark it transferred after sending the funds.");
+      await loadGroupDetail(selectedGroup);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Unable to initiate payout.");
+    } finally {
+      setPendingKey(pendingKey, false);
+    }
+  };
+
+  const handleTransferPayout = async () => {
+    if (!payout || !payoutForm.reference.trim()) return;
+    setError("");
+    const pendingKey = "payout-transfer";
+    setPendingKey(pendingKey, true);
+    try {
+      const response = await fetch(`/api/chama/groups/${selectedGroup}/payouts/${payout.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "transfer", reference: payoutForm.reference }),
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data?.error || "Unable to mark payout transferred.");
+      setMessage("Payout marked transferred. The recipient must confirm receipt.");
+      await loadGroupDetail(selectedGroup);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Unable to mark payout transferred.");
+    } finally {
+      setPendingKey(pendingKey, false);
+    }
+  };
+
+  const handleRetryPayout = async () => {
+    if (!payout) return;
+    const reason = window.prompt("Why is this failed payout being retried?");
+    if (!reason || reason.trim().length < 5) return;
+    setError("");
+    setMessage("");
+    const pendingKey = "payout-retry";
+    setPendingKey(pendingKey, true);
+    try {
+      const response = await fetch(`/api/chama/groups/${selectedGroup}/payouts/${payout.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "retry", reason }),
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data?.error || "Unable to authorize payout retry.");
+      setMessage("Retry authorized. Record the new transfer reference after resending the payout.");
+      await loadGroupDetail(selectedGroup);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Unable to authorize payout retry.");
+    } finally {
+      setPendingKey(pendingKey, false);
+    }
+  };
+
+  const handleConfirmLegacySnapshot = async () => {
+    const reason = window.prompt("Review the current active member list and contribution amount. Why is this legacy round snapshot accurate?");
+    if (!reason) return;
+    setError("");
+    try {
+      const response = await fetch(`/api/chama/groups/${selectedGroup}/rounds`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "confirm-legacy-snapshot", reason }),
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data?.error || "Unable to confirm round snapshot.");
+      setMessage("Round snapshot recorded for this legacy round.");
+      await loadGroupDetail(selectedGroup);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Unable to confirm round snapshot.");
+    }
+  };
+
+  const handleReconcile = async () => {
+    if (!reconciliationForm.openingBalance || !reconciliationForm.reportedClosingBalance) {
+      setError("Enter the statement opening and closing balances to reconcile this period.");
+      return;
+    }
+    setError("");
+    setMessage("");
+    const pendingKey = "reconcile";
+    setPendingKey(pendingKey, true);
+    try {
+      reconciliationKeyRef.current ??= crypto.randomUUID();
+      const response = await fetch(`/api/chama/groups/${selectedGroup}/reconciliation`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          ...reconciliationForm,
+          periodEnd: `${reconciliationForm.periodEnd}T23:59:59.999Z`,
+          idempotencyKey: reconciliationKeyRef.current,
+        }),
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data?.error || "Unable to reconcile the selected period.");
+      reconciliationKeyRef.current = null;
+      setMessage(data.reconciliation?.status === "matched" ? "Period reconciled with no discrepancy." : "Reconciliation saved with a discrepancy for review.");
+      await loadGroupDetail(selectedGroup);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Unable to reconcile the selected period.");
     } finally {
       setPendingKey(pendingKey, false);
     }
@@ -239,17 +456,12 @@ export default function TreasurerPanelPage() {
     });
   }, [contributions, exportFilters]);
 
-  const ledgerEntries = filteredContributions.map((contribution) => {
-    const member = members.find((item) => item.id === contribution.memberId);
-    return {
-      memberName: member?.name || member?.email || "Member",
-      amount: contribution.amount,
-      method: contribution.method,
-      reference: contribution.reference,
-      paidAt: contribution.paidAt,
-    };
-  });
-  const ledgerFileName = `chama-ledger-${selectedGroup}.pdf`;
+  const statementParams = new URLSearchParams();
+  if (exportFilters.dateFrom) statementParams.set("dateFrom", exportFilters.dateFrom);
+  if (exportFilters.dateTo) statementParams.set("dateTo", exportFilters.dateTo);
+  if (exportFilters.memberId !== "all") statementParams.set("memberId", exportFilters.memberId);
+  if (exportFilters.method !== "all") statementParams.set("method", exportFilters.method);
+  const statementHref = `/api/chama/groups/${selectedGroup}/statement?${statementParams.toString()}`;
 
   if (loading) {
     return (
@@ -350,6 +562,58 @@ export default function TreasurerPanelPage() {
         ))}
       </section>
 
+      {financeSummary && (
+        <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+          {[
+            ["Verified contributions", Number(financeSummary.verifiedContributionsMinor ?? 0)],
+            ["Pending verification", Number(financeSummary.pendingVerificationMinor ?? 0)],
+            ["Recorded payouts", Number(financeSummary.recordedPayoutsMinor ?? 0)],
+            ["Outstanding obligations", financeSummary.outstandingObligationsMinor == null ? null : Number(financeSummary.outstandingObligationsMinor)],
+          ].map(([label, amount]) => (
+            <div className="glass-panel p-5" key={String(label)}>
+              <p className="text-xs uppercase tracking-[0.2em] text-[var(--muted)]">{label}</p>
+              <p className="text-xl font-semibold mt-3">
+                {amount === null ? "Needs round review" : currencyFormatter.format(fromMinorUnits(Number(amount), groupDetail?.currency ?? "KES"))}
+              </p>
+            </div>
+          ))}
+        </section>
+      )}
+
+      <section className="glass-panel p-5 sm:p-6 space-y-4">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <p className="text-xs uppercase tracking-[0.25em] text-[var(--muted)]">Reconciliation</p>
+            <h2 className="text-xl font-semibold mt-2">Compare the ledger with a cash statement</h2>
+            <p className="text-xs text-[var(--muted)] mt-1">Opening and closing balances must come from an actual bank, wallet, or cash record.</p>
+          </div>
+          {reconciliations[0] && (
+            <span className={`rounded-full px-3 py-1 text-xs font-semibold ${reconciliations[0].status === "matched" ? "bg-emerald-100 text-emerald-800" : "bg-amber-100 text-amber-800"}`}>
+              Latest: {reconciliations[0].status.replaceAll("_", " ")}
+              {reconciliations[0].discrepancyMinor != null && ` · ${formatMinorUnits(reconciliations[0].discrepancyMinor, reconciliations[0].currency)} difference`}
+            </span>
+          )}
+        </div>
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
+          <label className="text-xs text-[var(--muted)]">From<input type="date" className={inputClass} value={reconciliationForm.periodStart} onChange={(event) => setReconciliationForm((prev) => ({ ...prev, periodStart: event.target.value }))} /></label>
+          <label className="text-xs text-[var(--muted)]">Through<input type="date" className={inputClass} value={reconciliationForm.periodEnd} onChange={(event) => setReconciliationForm((prev) => ({ ...prev, periodEnd: event.target.value }))} /></label>
+          <label className="text-xs text-[var(--muted)]">Statement opening balance<input inputMode="decimal" className={inputClass} value={reconciliationForm.openingBalance} onChange={(event) => setReconciliationForm((prev) => ({ ...prev, openingBalance: event.target.value }))} /></label>
+          <label className="text-xs text-[var(--muted)]">Reported closing balance<input inputMode="decimal" className={inputClass} value={reconciliationForm.reportedClosingBalance} onChange={(event) => setReconciliationForm((prev) => ({ ...prev, reportedClosingBalance: event.target.value }))} /></label>
+          <label className="text-xs text-[var(--muted)]">Notes<input className={inputClass} value={reconciliationForm.notes} onChange={(event) => setReconciliationForm((prev) => ({ ...prev, notes: event.target.value }))} /></label>
+        </div>
+        <button type="button" onClick={handleReconcile} disabled={pending.reconcile} className="inline-flex items-center gap-2 px-5 py-3 rounded-full bg-[var(--button-bg)] text-white text-sm font-semibold disabled:opacity-60">
+          {pending.reconcile && <Loader2 size={14} className="animate-spin" />}
+          Record reconciliation
+        </button>
+        {reconciliations[0] && (
+          <div className="grid gap-2 border-t border-[var(--glass-border)] pt-4 text-xs text-[var(--muted)] sm:grid-cols-3">
+            <span>Verified in: {formatMinorUnits(reconciliations[0].verifiedContributionsMinor, reconciliations[0].currency)}</span>
+            <span>Confirmed out: {formatMinorUnits(reconciliations[0].confirmedPayoutsMinor, reconciliations[0].currency)}</span>
+            <span>Outstanding: {formatMinorUnits(reconciliations[0].outstandingObligationsMinor, reconciliations[0].currency)}</span>
+          </div>
+        )}
+      </section>
+
       <section className="grid grid-cols-1 xl:grid-cols-[1.1fr_0.9fr] gap-6">
         <div className="glass-panel p-6 sm:p-7 space-y-5">
           <div>
@@ -395,8 +659,39 @@ export default function TreasurerPanelPage() {
               <span>Due {openRound?.dueDate ? new Date(openRound.dueDate).toLocaleDateString() : "—"}</span>
             </div>
             <div className="text-xs text-[var(--muted)]">
-              {openRound?.receivedAt ? "Marked as paid" : "Awaiting payout confirmation"}
+              {!openRound ? "No open round" : payout?.status === "confirmed" ? "Confirmed by recipient" : payout?.status === "transferred" ? "Transferred · awaiting recipient confirmation" : payout?.status === "pending_transfer" ? "Recorded · awaiting transfer" : payout?.status === "failed" ? "Failed · retry requires an audit reason" : "No payout recorded"}
             </div>
+            {openRound?.snapshotStatus === "legacy_review_required" && (
+              <button type="button" onClick={handleConfirmLegacySnapshot} className="text-xs font-semibold text-amber-700">
+                Review and confirm this legacy round snapshot
+              </button>
+            )}
+            {openRound && !payout && (
+              <div className="grid gap-2 sm:grid-cols-3">
+                <input className={inputClass} placeholder="Payout amount" value={payoutForm.amount} onChange={(event) => setPayoutForm((prev) => ({ ...prev, amount: event.target.value }))} />
+                <input className={inputClass} placeholder="Payment method" value={payoutForm.method} onChange={(event) => setPayoutForm((prev) => ({ ...prev, method: event.target.value }))} />
+                <input className={inputClass} placeholder="Reference" value={payoutForm.reference} onChange={(event) => setPayoutForm((prev) => ({ ...prev, reference: event.target.value }))} />
+                <button type="button" onClick={handleCreatePayout} disabled={pending["payout-create"] || openRound.snapshotStatus !== "confirmed"} className="sm:col-span-3 inline-flex items-center justify-center gap-2 px-4 py-2 rounded-full bg-[var(--button-bg)] text-white text-sm font-semibold disabled:opacity-60">
+                  {pending["payout-create"] && <Loader2 size={14} className="animate-spin" />}
+                  Record payout for transfer
+                </button>
+              </div>
+            )}
+            {payout?.status === "pending_transfer" && (
+              <div className="space-y-2">
+                <input className={inputClass} placeholder="Transfer reference required" value={payoutForm.reference} onChange={(event) => setPayoutForm((prev) => ({ ...prev, reference: event.target.value }))} />
+                <button type="button" onClick={handleTransferPayout} disabled={pending["payout-transfer"] || !payoutForm.reference.trim()} className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-[var(--button-bg)] text-white text-sm font-semibold disabled:opacity-60">
+                  {pending["payout-transfer"] && <Loader2 size={14} className="animate-spin" />}
+                  Mark transfer sent
+                </button>
+              </div>
+            )}
+            {payout?.status === "failed" && (
+              <button type="button" onClick={handleRetryPayout} disabled={pending["payout-retry"]} className="inline-flex items-center gap-2 px-4 py-2 rounded-full border border-amber-500 text-amber-800 text-sm font-semibold disabled:opacity-60">
+                {pending["payout-retry"] && <Loader2 size={14} className="animate-spin" />}
+                Authorize payout retry
+              </button>
+            )}
           </div>
         </div>
       </section>
@@ -406,20 +701,10 @@ export default function TreasurerPanelPage() {
           <p className="text-xs uppercase tracking-[0.3em] text-[var(--muted)]">Ledger</p>
           <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
             <h2 className="text-xl font-semibold mt-2">Recent contributions</h2>
-            <PDFDownloadLink
-              document={
-                <TreasurerLedgerPdf
-                  groupName={groupDetail?.name || "ChamaPulse group"}
-                  currency={groupDetail?.currency || "KES"}
-                  entries={ledgerEntries}
-                />
-              }
-              fileName={ledgerFileName}
-              className="inline-flex items-center gap-2 text-xs font-semibold text-[var(--button-bg)]"
-            >
+            <a href={statementHref} className="inline-flex items-center gap-2 text-xs font-semibold text-[var(--button-bg)]">
               <Download size={14} />
-              Download PDF
-            </PDFDownloadLink>
+              Download complete statement
+            </a>
           </div>
         </div>
         <div className="rounded-2xl border border-[var(--glass-border)] bg-white/60 p-4 space-y-4">
@@ -494,11 +779,16 @@ export default function TreasurerPanelPage() {
                   </span>
                 </div>
                 <p className="text-xs text-[var(--muted)] mt-1">
-                  {contribution.method} •{" "}
+                  {contribution.method} • {contribution.status.replaceAll("_", " ")} •{" "}
                   {contribution.paidAt
                     ? new Date(contribution.paidAt).toLocaleDateString()
                     : "Today"}
                 </p>
+                {["pending_verification", "legacy_unverified"].includes(contribution.status) && (
+                  <button type="button" onClick={() => handleVerifyContribution(contribution)} className="mt-2 text-xs font-semibold text-[var(--button-bg)]">
+                    {contribution.status === "legacy_unverified" ? "Review historical evidence" : "Verify payment"}
+                  </button>
+                )}
               </div>
             );
           })}

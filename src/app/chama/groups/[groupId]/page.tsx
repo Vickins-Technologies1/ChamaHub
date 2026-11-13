@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useParams } from "next/navigation";
 import {
   ArrowRight,
@@ -18,6 +18,7 @@ import {
 import RotationWheel from "@/components/chama/RotationWheel";
 import { authClient } from "@/lib/auth-client";
 import Modal from "@/components/Modal";
+import { formatMinorUnits } from "@/lib/finance/money";
 
 type GroupDetail = {
   id: string;
@@ -55,6 +56,10 @@ type Round = {
   totalContributions: number;
   dueDate?: string;
   receivedAt?: string;
+  expectedTotalMinor?: number;
+  currency?: string;
+  snapshotStatus?: string;
+  eligibleMemberIds?: string[];
 };
 
 type Contribution = {
@@ -62,9 +67,22 @@ type Contribution = {
   roundId: string;
   memberId: string;
   amount: number;
+  amountMinor?: number | null;
   method: string;
   reference?: string;
   paidAt?: string;
+  status: string;
+  currency?: string;
+};
+
+type Payout = {
+  id: string;
+  roundId: string;
+  memberId: string;
+  amountMinor: number | null;
+  currency: string;
+  status: string;
+  reference: string;
 };
 
 type GroupCall = {
@@ -92,6 +110,7 @@ export default function ChamaGroupPage() {
   const [members, setMembers] = useState<Member[]>([]);
   const [rounds, setRounds] = useState<Round[]>([]);
   const [contributions, setContributions] = useState<Contribution[]>([]);
+  const [currentPayout, setCurrentPayout] = useState<Payout | null>(null);
   const [openRoundId, setOpenRoundId] = useState<string | null>(null);
   const [calls, setCalls] = useState<GroupCall[]>([]);
   const [callsLoading, setCallsLoading] = useState(true);
@@ -104,6 +123,7 @@ export default function ChamaGroupPage() {
 
   const [inviteOpen, setInviteOpen] = useState(false);
   const [contributionOpen, setContributionOpen] = useState(false);
+  const contributionKeyRef = useRef<string | null>(null);
   const [callOpen, setCallOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
 
@@ -143,10 +163,10 @@ export default function ChamaGroupPage() {
     () =>
       new Intl.NumberFormat("en-KE", {
         style: "currency",
-        currency: "KES",
-        maximumFractionDigits: 0,
+        currency: group?.currency ?? "KES",
+        maximumFractionDigits: new Intl.NumberFormat("en", { style: "currency", currency: group?.currency ?? "KES" }).resolvedOptions().maximumFractionDigits,
       }),
-    []
+    [group?.currency]
   );
 
   const setPendingKey = (key: string, value: boolean) =>
@@ -158,25 +178,30 @@ export default function ChamaGroupPage() {
 
     setError((prev) => (options.silent ? prev : ""));
     try {
-      const [groupRes, membersRes, roundsRes] = await Promise.all([
+      const [groupRes, membersRes, roundsRes, payoutsRes] = await Promise.all([
         fetch(`/api/chama/groups/${groupId}`, { cache: "no-store" }),
         fetch(`/api/chama/groups/${groupId}/members`, { cache: "no-store" }),
         fetch(`/api/chama/groups/${groupId}/rounds`, { cache: "no-store" }),
+        fetch(`/api/chama/groups/${groupId}/payouts`, { cache: "no-store" }),
       ]);
 
       const groupData = await groupRes.json();
       const membersData = await membersRes.json();
       const roundsData = await roundsRes.json();
+      const payoutsData = await payoutsRes.json();
 
       if (!groupRes.ok) throw new Error(groupData?.error || "Failed to load group.");
       if (!membersRes.ok) throw new Error(membersData?.error || "Failed to load members.");
       if (!roundsRes.ok) throw new Error(roundsData?.error || "Failed to load rounds.");
+      if (!payoutsRes.ok) throw new Error(payoutsData?.error || "Failed to load payouts.");
 
       setGroup(groupData.group);
       setStats(groupData.stats);
       setMembers(membersData.members ?? []);
       setOpenRoundId(membersData.openRoundId ?? null);
       setRounds(roundsData.rounds ?? []);
+      const openRound = (roundsData.rounds ?? []).find((item: Round) => item.status === "open");
+      setCurrentPayout((payoutsData.payouts ?? []).find((item: Payout) => item.roundId === openRound?.id) ?? null);
       setGroupForm({
         name: groupData.group.name,
         description: groupData.group.description,
@@ -187,7 +212,7 @@ export default function ChamaGroupPage() {
       });
       setContributionForm((prev) => ({
         ...prev,
-        memberId: membersData.members?.[0]?.id ?? "",
+        memberId: membersData.members?.find((item: Member) => item.userId === session?.user?.id)?.id ?? membersData.members?.[0]?.id ?? "",
         amount: String(groupData.group.contributionAmount ?? ""),
       }));
     } catch (err) {
@@ -340,6 +365,7 @@ export default function ChamaGroupPage() {
     const pendingKey = "contribution-record";
     setPendingKey(pendingKey, true);
     try {
+      contributionKeyRef.current ??= crypto.randomUUID();
       const response = await fetch(`/api/chama/groups/${groupId}/contributions`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -349,11 +375,13 @@ export default function ChamaGroupPage() {
           amount: contributionForm.amount,
           method: contributionForm.method,
           reference: contributionForm.reference,
+          idempotencyKey: contributionKeyRef.current,
         }),
       });
       const data = await response.json();
       if (!response.ok) throw new Error(data?.error || "Unable to record contribution.");
-      setMessage("Contribution recorded.");
+      contributionKeyRef.current = null;
+      setMessage("Payment submitted for verification.");
       setContributionOpen(false);
       await loadGroup({ silent: true });
       await loadContributions(openRoundId);
@@ -386,23 +414,24 @@ export default function ChamaGroupPage() {
     }
   };
 
-  const handleMarkReceived = async () => {
+  const handleConfirmPayout = async () => {
+    if (!currentPayout) return;
     setMessage("");
     setError("");
-    const pendingKey = "round-received";
+    const pendingKey = "payout-confirm";
     setPendingKey(pendingKey, true);
     try {
-      const response = await fetch(`/api/chama/groups/${groupId}/rounds`, {
-        method: "POST",
+      const response = await fetch(`/api/chama/groups/${groupId}/payouts/${currentPayout.id}`, {
+        method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action: "mark-received" }),
+        body: JSON.stringify({ action: "confirm" }),
       });
       const data = await response.json();
-      if (!response.ok) throw new Error(data?.error || "Unable to mark received.");
-      setMessage("Recipient marked as paid.");
+      if (!response.ok) throw new Error(data?.error || "Unable to confirm payout.");
+      setMessage("Payout receipt confirmed.");
       await loadGroup({ silent: true });
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Unable to mark received.");
+      setError(err instanceof Error ? err.message : "Unable to confirm payout.");
     } finally {
       setPendingKey(pendingKey, false);
     }
@@ -439,10 +468,17 @@ export default function ChamaGroupPage() {
     const pendingKey = "group-update";
     setPendingKey(pendingKey, true);
     try {
+      const financialChanged = Boolean(group && (
+        Number(groupForm.contributionAmount) !== group.contributionAmount ||
+        groupForm.currency.trim().toUpperCase() !== group.currency ||
+        groupForm.frequency !== group.frequency
+      ));
+      const reason = financialChanged ? window.prompt("Why are you changing the group's future contribution terms?") : "";
+      if (financialChanged && !reason?.trim()) return;
       const response = await fetch(`/api/chama/groups/${groupId}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(groupForm),
+        body: JSON.stringify({ ...groupForm, reason }),
       });
       const data = await response.json();
       if (!response.ok) throw new Error(data?.error || "Unable to update group.");
@@ -520,11 +556,14 @@ export default function ChamaGroupPage() {
       member.userId === session?.user?.id ||
       (session?.user?.email && member.email === session.user.email.toLowerCase())
   );
+  const currentRound = rounds.find((round) => round.status === "open");
+  const canManageFinance = isSiteAdmin || ["admin", "treasurer"].includes(myMember?.role ?? "");
+  const canRecordForOthers = canManageFinance;
   const hasGroupPrivileges =
     isSiteAdmin ||
     isModerator ||
     ["admin", "treasurer", "secretary"].includes(myMember?.role ?? "");
-  const isGroupAdmin = isSiteAdmin || isModerator || myMember?.role === "admin";
+  const isGroupAdmin = isSiteAdmin || myMember?.role === "admin";
   const canManageCalls =
     isSiteAdmin || isModerator || ["admin", "secretary"].includes(myMember?.role ?? "");
 
@@ -591,34 +630,28 @@ export default function ChamaGroupPage() {
               </span>
             </div>
           </div>
-          {hasGroupPrivileges && (
+          {(canManageFinance || Boolean(currentPayout && currentPayout.status === "transferred" && myMember?.id === currentPayout.memberId)) && (
             <div className="flex flex-col gap-3">
-              <button
-                type="button"
-                onClick={handleMarkReceived}
-                disabled={pending["round-received"]}
-                className="inline-flex items-center gap-2 px-5 py-3 rounded-full border border-[var(--glass-border)] bg-white/70 text-sm font-semibold disabled:opacity-70"
-              >
-                {pending["round-received"] ? (
-                  <Loader2 size={16} className="animate-spin" />
-                ) : (
-                  <CheckCircle2 size={16} />
-                )}
-                {pending["round-received"] ? "Marking..." : "Mark recipient paid"}
-              </button>
-              <button
-                type="button"
-                onClick={handleAdvanceRound}
-                disabled={pending["round-advance"]}
-                className="inline-flex items-center gap-2 px-5 py-3 rounded-full bg-[var(--button-bg)] text-white text-sm font-semibold disabled:opacity-70"
-              >
-                {pending["round-advance"] ? (
-                  <Loader2 size={16} className="animate-spin" />
-                ) : (
-                  <ArrowRight size={16} />
-                )}
-                {pending["round-advance"] ? "Moving..." : "Move to next round"}
-              </button>
+              {currentPayout?.status === "transferred" && myMember?.id === currentPayout.memberId && (
+                <button type="button" onClick={handleConfirmPayout} disabled={pending["payout-confirm"]} className="inline-flex items-center gap-2 px-5 py-3 rounded-full border border-[var(--glass-border)] bg-white/70 text-sm font-semibold disabled:opacity-70">
+                  {pending["payout-confirm"] ? <Loader2 size={16} className="animate-spin" /> : <CheckCircle2 size={16} />}
+                  {pending["payout-confirm"] ? "Confirming..." : "Confirm payout received"}
+                </button>
+              )}
+              {currentRound?.snapshotStatus === "legacy_review_required" && (
+                <p className="text-xs text-amber-700">Treasury must review this legacy round before payments or advancement.</p>
+              )}
+              {canManageFinance && (
+                <button
+                  type="button"
+                  onClick={handleAdvanceRound}
+                  disabled={pending["round-advance"] || openRound?.snapshotStatus !== "confirmed"}
+                  className="inline-flex items-center gap-2 px-5 py-3 rounded-full bg-[var(--button-bg)] text-white text-sm font-semibold disabled:opacity-70"
+                >
+                  {pending["round-advance"] ? <Loader2 size={16} className="animate-spin" /> : <ArrowRight size={16} />}
+                  {pending["round-advance"] ? "Moving..." : "Move to next round"}
+                </button>
+              )}
             </div>
           )}
         </div>
@@ -895,7 +928,7 @@ export default function ChamaGroupPage() {
             </p>
             <h2 className="text-xl font-semibold mt-2">Record contributions</h2>
             </div>
-            {hasGroupPrivileges && (
+            {(hasGroupPrivileges || Boolean(myMember)) && (
               <button
                 type="button"
                 onClick={() => setContributionOpen(true)}
@@ -907,9 +940,9 @@ export default function ChamaGroupPage() {
               </button>
             )}
           </div>
-          {hasGroupPrivileges ? (
+          {hasGroupPrivileges || myMember ? (
             <p className="text-sm text-[var(--muted)]">
-              Use the action button above to log a payment without leaving this page.
+              {canRecordForOthers ? "Record a member payment for treasury verification." : "Submit your contribution for treasury verification."}
             </p>
           ) : (
             <p className="text-sm text-[var(--muted)]">
@@ -928,11 +961,13 @@ export default function ChamaGroupPage() {
                   <div className="flex items-center justify-between">
                     <p className="font-medium">{member?.name || member?.email || "Member"}</p>
                     <span className="text-sm font-semibold">
-                      {currencyFormatter.format(contribution.amount)}
+                      {contribution.amountMinor != null && contribution.currency
+                        ? formatMinorUnits(contribution.amountMinor, contribution.currency)
+                        : currencyFormatter.format(contribution.amount)}
                     </span>
                   </div>
                   <p className="text-xs text-[var(--muted)] mt-1">
-                    {contribution.method} •{" "}
+                    {contribution.method} • {contribution.status.replaceAll("_", " ")} •{" "}
                     {contribution.paidAt ? new Date(contribution.paidAt).toLocaleDateString() : "Today"}
                   </p>
                 </div>
@@ -1093,7 +1128,7 @@ export default function ChamaGroupPage() {
         </section>
       )}
 
-      {activeTab === "settings" && hasGroupPrivileges && (
+      {activeTab === "settings" && canManageFinance && (
         <section className="glass-panel p-6 sm:p-7 space-y-5">
           <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4">
             <div>
@@ -1143,7 +1178,7 @@ export default function ChamaGroupPage() {
               value={memberForm.name}
               onChange={(event) => setMemberForm((prev) => ({ ...prev, name: event.target.value }))}
             />
-            <select
+            {isGroupAdmin ? <select
               className={inputClass}
               value={memberForm.role}
               onChange={(event) => setMemberForm((prev) => ({ ...prev, role: event.target.value }))}
@@ -1153,7 +1188,11 @@ export default function ChamaGroupPage() {
                   {role}
                 </option>
               ))}
-            </select>
+            </select> : (
+              <div className="rounded-xl border border-[var(--glass-border)] p-3 text-sm">
+                Role: member
+              </div>
+            )}
             <input
               className={inputClass}
               placeholder="Email"
@@ -1192,7 +1231,7 @@ export default function ChamaGroupPage() {
       >
         <div className="space-y-4">
           <div className="grid grid-cols-1 gap-4">
-            <select
+            {canRecordForOthers ? <select
               className={inputClass}
               value={contributionForm.memberId}
               onChange={(event) =>
@@ -1204,11 +1243,15 @@ export default function ChamaGroupPage() {
                   {member.name || member.email || "Member"}
                 </option>
               ))}
-            </select>
+            </select> : (
+              <div className="rounded-xl border border-[var(--glass-border)] p-3 text-sm">
+                Payment for {myMember?.name || myMember?.email || "your member account"}
+              </div>
+            )}
             <input
               className={inputClass}
               type="number"
-              placeholder="Amount (KES)"
+              placeholder={`Amount (${group?.currency ?? "KES"})`}
               value={contributionForm.amount}
               onChange={(event) =>
                 setContributionForm((prev) => ({ ...prev, amount: event.target.value }))

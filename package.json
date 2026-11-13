@@ -10,7 +10,8 @@
     "lint": "eslint",
     "test": "vitest run",
     "test:watch": "vitest",
-    "test:ci": "vitest run"
+    "test:ci": "vitest run",
+    "finance:migrate": "tsx src/scripts/migrate-financial-ledger.ts"
   },
   "dependencies": {
     "@auth/core": "^0.34.3",

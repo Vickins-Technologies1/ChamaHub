@@ -6,6 +6,9 @@ import ChamaMemberModel from "@/lib/models/chama-member";
 import ChamaRoundModel from "@/lib/models/chama-round";
 import { calculatePotAmount, normalizeFrequency } from "@/lib/chama-utils";
 import { getSessionUser, isModerator, isSiteAdmin, linkMemberToUser } from "@/lib/chama-access";
+import { ensureFinanceIndexes, runInFinancialTransaction, writeFinanceAudit } from "@/lib/finance/service";
+import { buildRoundSnapshot } from "@/lib/finance/round-snapshot";
+import { toMinorUnits } from "@/lib/finance/money";
 
 export async function GET() {
   try {
@@ -72,7 +75,7 @@ export async function GET() {
         status: group.status,
         rotationType: group.rotationType,
         currentRound: group.currentRound,
-        potAmount: calculatePotAmount(group, activeCount),
+        potAmount: openRound?.potAmount ?? calculatePotAmount(group, activeCount),
         openRound: openRound
           ? {
               id: String(openRound._id),
@@ -124,6 +127,7 @@ export async function POST(request: Request) {
       currency,
       rotationType,
     } = body as Record<string, string>;
+    const normalizedCurrency = currency?.trim().toUpperCase() || "KES";
 
     if (!name || !contributionAmount || !startDate) {
       return NextResponse.json(
@@ -132,50 +136,74 @@ export async function POST(request: Request) {
       );
     }
 
+    try {
+      toMinorUnits(contributionAmount, normalizedCurrency);
+    } catch (error) {
+      return NextResponse.json({ error: error instanceof Error ? error.message : "Invalid contribution amount or currency." }, { status: 400 });
+    }
+
     await connectMongoose();
+    await ensureFinanceIndexes();
 
-    const group = await ChamaGroupModel.create({
-      name: name.trim(),
-      description: description?.trim() ?? "",
-      contributionAmount: Number(contributionAmount),
-      frequency: normalizeFrequency(frequency),
-      numberOfMembers: Number(numberOfMembers) || 1,
-      expectedMemberCount: Math.max(1, Number(numberOfMembers) || 1),
-      startDate: new Date(startDate),
-      currency: currency?.trim() || "KES",
-      createdBy: user.id,
-      rotationType: rotationType === "random" ? "random" : "manual",
+    const groupId = await runInFinancialTransaction(async (session) => {
+      const [group] = await ChamaGroupModel.create([{
+        name: name.trim(),
+        description: description?.trim() ?? "",
+        contributionAmount: Number(contributionAmount),
+        frequency: normalizeFrequency(frequency),
+        numberOfMembers: Number(numberOfMembers) || 1,
+        expectedMemberCount: Math.max(1, Number(numberOfMembers) || 1),
+        startDate: new Date(startDate),
+        currency: normalizedCurrency,
+        createdBy: user.id,
+        rotationType: rotationType === "random" ? "random" : "manual",
+      }], { session });
+
+      const [member] = await ChamaMemberModel.create([{
+        groupId: group._id,
+        userId: user.id,
+        name: user.name || user.email?.split("@")[0] || "Member",
+        email: user.email?.toLowerCase(),
+        role: "admin",
+        status: "active",
+        invitedBy: user.id,
+        joinedAt: new Date(),
+      }], { session });
+
+      group.rotationOrder = [member._id as Types.ObjectId];
+      group.numberOfMembers = 1;
+      group.currentRound = 1;
+      await group.save({ session });
+
+      const initialSnapshot = buildRoundSnapshot(group, [member._id as Types.ObjectId]);
+      const [firstRound] = await ChamaRoundModel.create([{
+        groupId: group._id,
+        roundNumber: 1,
+        recipientMemberId: member._id,
+        status: "open",
+        totalContributions: 0,
+        dueDate: new Date(startDate),
+        startedAt: new Date(startDate),
+        ...initialSnapshot,
+        snapshotConfirmedBy: user.id,
+        snapshotConfirmedAt: new Date(),
+      }], { session });
+      await writeFinanceAudit({
+        groupId: group._id as Types.ObjectId,
+        actorId: user.id,
+        action: "round.opened",
+        entityType: "round",
+        entityId: String(firstRound._id),
+        newValues: { roundNumber: 1, ...initialSnapshot, snapshotConfirmedBy: user.id },
+      }, session);
+      return String(group._id);
     });
 
-    const member = await ChamaMemberModel.create({
-      groupId: group._id,
-      userId: user.id,
-      name: user.name || user.email?.split("@")[0] || "Member",
-      email: user.email?.toLowerCase(),
-      role: "admin",
-      status: "active",
-      invitedBy: user.id,
-      joinedAt: new Date(),
-    });
-
-    group.rotationOrder = [member._id as Types.ObjectId];
-    group.numberOfMembers = 1;
-    group.currentRound = 1;
-    await group.save();
-
-    await ChamaRoundModel.create({
-      groupId: group._id,
-      roundNumber: 1,
-      recipientMemberId: member._id,
-      status: "open",
-      potAmount: calculatePotAmount(group, 1),
-      totalContributions: 0,
-      dueDate: new Date(startDate),
-      startedAt: new Date(startDate),
-    });
-
-    return NextResponse.json({ groupId: String(group._id) }, { status: 201 });
+    return NextResponse.json({ groupId }, { status: 201 });
   } catch (error) {
+    if (error instanceof Error && /Transaction numbers are only allowed|replica set|mongos/i.test(error.message)) {
+      return NextResponse.json({ error: "Group creation requires MongoDB replica-set or sharded-cluster transaction support." }, { status: 503 });
+    }
     return NextResponse.json({ error: "Unable to create group." }, { status: 500 });
   }
 }

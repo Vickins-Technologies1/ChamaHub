@@ -3,9 +3,10 @@ import { connectMongoose } from "@/lib/mongoose";
 import ChamaGroupModel from "@/lib/models/chama-group";
 import ChamaMemberModel from "@/lib/models/chama-member";
 import ChamaRoundModel from "@/lib/models/chama-round";
-import ChamaContributionModel from "@/lib/models/chama-contribution";
+import ChamaFinancialTransactionModel from "@/lib/models/chama-financial-transaction";
 import { getAuth } from "@/lib/auth";
 import { getSessionUser, isSiteAdmin } from "@/lib/chama-access";
+import { fromMinorUnits } from "@/lib/finance/money";
 import transporter from "@/lib/nodemailer";
 
 export async function GET() {
@@ -38,36 +39,38 @@ export async function GET() {
       dueDate: { $gte: now, $lte: inSevenDays },
     });
 
-    const contributionStats = await ChamaContributionModel.aggregate([
+    const contributionStats = await ChamaFinancialTransactionModel.aggregate([
+      { $match: { type: "contribution", status: "verified", amountMinor: { $type: "number" } } },
       {
         $group: {
-          _id: null,
-          totalAmount: { $sum: "$amount" },
+          _id: "$currency",
+          totalAmountMinor: { $sum: "$amountMinor" },
           totalCount: { $sum: 1 },
         },
       },
     ]);
 
-    const contributionTotals = contributionStats[0] ?? { totalAmount: 0, totalCount: 0 };
+    const verifiedContributionCount = contributionStats.reduce((sum, item) => sum + item.totalCount, 0);
 
     const groups = await ChamaGroupModel.find().sort({ createdAt: -1 }).lean();
     const members = await ChamaMemberModel.find({ status: { $ne: "rejected" } }).lean();
     const openRoundList = await ChamaRoundModel.find({ status: "open" }).lean();
 
-    const contributionsByGroup = await ChamaContributionModel.aggregate([
+    const contributionsByGroup = await ChamaFinancialTransactionModel.aggregate([
+      { $match: { type: "contribution", status: "verified", amountMinor: { $type: "number" } } },
       {
         $group: {
-          _id: "$groupId",
-          totalAmount: { $sum: "$amount" },
+          _id: { groupId: "$groupId", currency: "$currency" },
+          totalAmountMinor: { $sum: "$amountMinor" },
           totalCount: { $sum: 1 },
-          lastPaidAt: { $max: "$paidAt" },
+          lastPaidAt: { $max: "$transactionDate" },
         },
       },
     ]);
 
     const contributionMap = contributionsByGroup.reduce<Record<string, (typeof contributionsByGroup)[number]>>(
       (acc, item) => {
-        acc[String(item._id)] = item;
+        acc[`${String(item._id.groupId)}:${item._id.currency}`] = item;
         return acc;
       },
       {}
@@ -93,7 +96,7 @@ export async function GET() {
       const groupMembers = membersByGroup[groupId] ?? [];
       const activeCount = groupMembers.filter((member) => member.status === "active").length;
       const openRound = openRoundMap[groupId];
-      const contributionSummary = contributionMap[groupId];
+      const contributionSummary = contributionMap[`${groupId}:${group.currency}`];
 
       return {
         id: groupId,
@@ -121,7 +124,7 @@ export async function GET() {
               potAmount: openRound.potAmount,
             }
           : null,
-        totalCollected: contributionSummary?.totalAmount ?? 0,
+        totalCollected: contributionSummary ? fromMinorUnits(contributionSummary.totalAmountMinor, group.currency) : 0,
         contributionsCount: contributionSummary?.totalCount ?? 0,
         lastContributionAt: contributionSummary?.lastPaidAt ?? null,
       };
@@ -135,8 +138,10 @@ export async function GET() {
         activeMembers,
         openRounds,
         upcomingPayouts,
-        totalCollected: contributionTotals.totalAmount,
-        totalContributions: contributionTotals.totalCount,
+        totalVerifiedContributionEntries: verifiedContributionCount,
+        verifiedContributionsByCurrency: contributionStats.map((item) => ({ currency: item._id, amountMinor: item.totalAmountMinor, count: item.totalCount })),
+        totalCollected: null,
+        totalContributions: verifiedContributionCount,
       },
       groups: groupRows,
     });

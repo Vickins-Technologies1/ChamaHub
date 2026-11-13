@@ -1,4 +1,4 @@
-import { Schema, model, models, type InferSchemaType } from "mongoose";
+import { Schema, model, models, type InferSchemaType, type Model } from "mongoose";
 
 const ContributionSchema = new Schema(
   {
@@ -10,15 +10,25 @@ const ContributionSchema = new Schema(
     method: { type: String, default: "manual" },
     reference: { type: String, default: "" },
     paidAt: { type: Date, default: Date.now },
+    financialTransactionId: {
+      type: Schema.Types.ObjectId,
+      ref: "ChamaFinancialTransaction",
+      default: null,
+    },
   },
   { timestamps: true }
 );
 
 ContributionSchema.index({ groupId: 1, roundId: 1, memberId: 1 });
+ContributionSchema.index(
+  { financialTransactionId: 1 },
+  { unique: true, partialFilterExpression: { financialTransactionId: { $type: "objectId" } } }
+);
 
 export type ChamaContribution = InferSchemaType<typeof ContributionSchema>;
 
 const ChamaContributionModel =
-  models.ChamaContribution || model("ChamaContribution", ContributionSchema);
+  (models.ChamaContribution as Model<ChamaContribution> | undefined) ||
+  model<ChamaContribution>("ChamaContribution", ContributionSchema);
 
 export default ChamaContributionModel;
