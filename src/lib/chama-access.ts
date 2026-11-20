@@ -1,5 +1,5 @@
 import { Types } from "mongoose";
-import { auth } from "@clerk/nextjs/server";
+import { getAuthSession } from "@/lib/auth-server";
 import connectToDatabase from "@/lib/mongodb";
 import ChamaMemberModel from "@/lib/models/chama-member";
 import { connectMongoose } from "@/lib/mongoose";
@@ -12,11 +12,11 @@ export type SessionUser = {
 };
 
 export const getSessionUser = async () => {
-  const { userId } = await auth();
-  if (!userId) return null;
+  const session = await getAuthSession();
+  if (!session?.user?.id) return null;
   const db = await connectToDatabase();
-  const user = await db.collection("user").findOne({ clerkId: userId });
-  if (!user) return null;
+  const user = await db.collection("user").findOne({ id: session.user.id });
+  if (!user || user.banned === true || user.status === "suspended") return null;
   const role = user.role;
   return {
     id: String(user.id),

@@ -1,7 +1,6 @@
 import { NextResponse } from "next/server";
-import { clerkClient } from "@/lib/auth";
+import { sendPasswordReset } from "@/lib/auth-server";
 import connectToDatabase from "@/lib/mongodb";
-import transporter from "@/lib/nodemailer";
 import {
   checkSameOrigin,
   enforceAdminRateLimit,
@@ -15,7 +14,7 @@ export const dynamic = "force-dynamic";
 async function findAccount(userId: string) {
   const db = await connectToDatabase();
   const user = await db.collection("user").findOne({ id: userId }, {
-    projection: { _id: 0, id: 1, clerkId: 1, name: 1, email: 1, role: 1, status: 1, banned: 1, createdAt: 1, updatedAt: 1 },
+    projection: { _id: 0, id: 1, name: 1, email: 1, role: 1, status: 1, banned: 1, createdAt: 1, updatedAt: 1 },
   });
   return { db, user };
 }
@@ -33,14 +32,15 @@ export async function GET(_request: Request, context: { params: Promise<{ userId
     projection: { groupId: 1, name: 1, role: 1, status: 1, joinedAt: 1 },
   }).sort({ joinedAt: -1 }).limit(100).toArray();
   const groupIds = members.map((member) => member.groupId);
-  const [groups, transactions, activity, notes, activeSessions] = await Promise.all([
+  const [groups, transactions, activity, notes, activeSessions, loginEvents] = await Promise.all([
     db.collection("chamagroups").find({ _id: { $in: groupIds } }, { projection: { name: 1, status: 1, currency: 1 } }).toArray(),
     db.collection("chamafinancialtransactions").find({ memberId: { $in: members.map((member) => member._id) } }, {
       projection: { groupId: 1, memberId: 1, type: 1, direction: 1, amountMinor: 1, legacyAmountMajor: 1, currency: 1, status: 1, reference: 1, transactionDate: 1 },
     }).sort({ transactionDate: -1, _id: -1 }).limit(50).toArray(),
     db.collection("admin_audit").find({ entityType: "user", entityId: userId }, { projection: { actorId: 1, actorRole: 1, action: 1, occurredAt: 1, metadata: 1 } }).sort({ occurredAt: -1 }).limit(50).toArray(),
     db.collection("admin_user_notes").find({ targetUserId: userId }, { projection: { authorId: 1, authorName: 1, text: 1, createdAt: 1 } }).sort({ createdAt: -1 }).limit(100).toArray(),
-    user.clerkId ? (await (await clerkClient()).sessions.getSessionList({ userId: String(user.clerkId), status: "active", limit: 100 })).totalCount : 0,
+    db.collection("auth_session").countDocuments({ userId, expiresAt: { $gt: new Date() } }),
+    db.collection("auth_audit_events").find({ userId, type: "session.created" }, { projection: { occurredAt: 1, ipAddress: 1, userAgent: 1 } }).sort({ occurredAt: -1 }).limit(10).toArray(),
   ]);
   const groupMap = new Map(groups.map((group) => [String(group._id), group]));
   return NextResponse.json({
@@ -60,7 +60,7 @@ export async function GET(_request: Request, context: { params: Promise<{ userId
       legacyAmountMajor: transaction.legacyAmountMajor ?? null, currency: transaction.currency,
       status: transaction.status, reference: transaction.reference ?? "", transactionDate: transaction.transactionDate,
     })),
-    security: { activeSessions, loginHistoryAvailable: false, passwordResetAvailable: false },
+    security: { activeSessions, loginHistoryAvailable: true, passwordResetAvailable: true, recentLogins: loginEvents },
     activity: activity.map((entry) => ({ id: String(entry._id), actorId: entry.actorId, actorRole: entry.actorRole, action: entry.action, occurredAt: entry.occurredAt, metadata: entry.metadata ?? null })),
     notes: notes.map((note) => ({ id: String(note._id), authorId: note.authorId, authorName: note.authorName, text: note.text, createdAt: note.createdAt })),
     subscriptionsAvailable: false,
@@ -97,16 +97,13 @@ export async function PATCH(request: Request, context: { params: Promise<{ userI
     if (!user || typeof user.email !== "string") return NextResponse.json({ error: "A linked account email was not found." }, { status: 404 });
     const targetGrant = await db.collection("admin_access").findOne({ userId });
     if (targetGrant && !isSuperAdmin(access.session.grant)) return NextResponse.json({ error: "Only a Super Admin may request recovery for administrative staff." }, { status: 403 });
-    if (!transporter) return NextResponse.json({ error: "Email delivery is not configured." }, { status: 503 });
-    const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : "http://localhost:3000");
-    await transporter.sendMail({
-      from: process.env.EMAIL_USER,
-      to: user.email,
-      subject: "ChamaPulse password recovery",
-      html: `<div style="font-family:Arial,sans-serif;line-height:1.6;color:#172033"><h2>Password recovery requested</h2><p>A ChamaPulse administrator asked us to send you to the secure password recovery flow.</p><p><a href="${siteUrl.replace(/\/$/, "")}/forgot-password">Continue to ChamaPulse sign in and choose “Forgot password?”</a></p><p>If you did not expect this message, contact ChamaPulse support.</p></div>`,
-    });
+    try {
+      await sendPasswordReset(user.email);
+    } catch {
+      return NextResponse.json({ error: "Email delivery is not configured or the recovery request could not be sent." }, { status: 503 });
+    }
     await writeAdminAudit({ actor: access.session, action: "user.password_recovery.requested", entityType: "user", entityId: userId, request });
-    return NextResponse.json({ ok: true, message: "Recovery instructions were sent using the existing Clerk password recovery flow." });
+    return NextResponse.json({ ok: true, message: "Password recovery instructions were sent to the account email." });
   }
 
   if (body.action !== "suspend" && body.action !== "reactivate" && body.action !== "revoke-sessions") {
@@ -120,36 +117,23 @@ export async function PATCH(request: Request, context: { params: Promise<{ userI
   if (access.session.user.id === userId) return NextResponse.json({ error: "Administrators cannot apply this action to their own account." }, { status: 400 });
 
   const { db, user } = await findAccount(userId);
-  if (!user || typeof user.clerkId !== "string") return NextResponse.json({ error: "The linked authentication account was not found." }, { status: 404 });
+  const identity = await db.collection<Record<string, unknown> & { _id: string }>("auth_user").findOne({ _id: userId }, { projection: { _id: 1 } });
+  if (!user || !identity) return NextResponse.json({ error: "The Better Auth account was not found." }, { status: 404 });
   const targetGrant = await db.collection("admin_access").findOne({ userId });
   if (targetGrant && !isSuperAdmin(access.session.grant)) return NextResponse.json({ error: "Only a Super Admin may apply account actions to administrative staff." }, { status: 403 });
   if (targetGrant?.role === "SUPER_ADMIN" && body.action !== "revoke-sessions") return NextResponse.json({ error: "A Super Admin account cannot be suspended here." }, { status: 403 });
-  const client = await clerkClient();
   if (body.action === "revoke-sessions") {
-    let offset = 0;
-    let revoked = 0;
-    let total = 0;
-    do {
-      const page = await client.sessions.getSessionList({ userId: user.clerkId, status: "active", limit: 100, offset });
-      total = page.totalCount;
-      for (let index = 0; index < page.data.length; index += 25) {
-        const batch = page.data.slice(index, index + 25);
-        await Promise.all(batch.map((session) => client.sessions.revokeSession(session.id)));
-        revoked += batch.length;
-      }
-      offset += page.data.length;
-      if (page.data.length === 0) break;
-    } while (offset < total);
+    const result = await db.collection("auth_session").deleteMany({ userId });
+    const revoked = result.deletedCount;
     await writeAdminAudit({ actor: access.session, action: "user.sessions.revoked", entityType: "user", entityId: userId, request, metadata: { revoked } });
     return NextResponse.json({ ok: true, revoked });
   }
 
   const reason = body.reason?.trim().slice(0, 500) ?? "";
   if (body.action === "suspend" && reason.length < 5) return NextResponse.json({ error: "Provide a suspension reason of at least five characters." }, { status: 400 });
-  if (body.action === "suspend") await client.users.banUser(user.clerkId);
-  else await client.users.unbanUser(user.clerkId);
   const nextStatus = body.action === "suspend" ? "suspended" : "active";
   await db.collection("user").updateOne({ id: userId }, { $set: { status: nextStatus, banned: body.action === "suspend", updatedAt: new Date() } });
+  const revoked = body.action === "suspend" ? await db.collection("auth_session").deleteMany({ userId }) : null;
   const actionName = body.action === "suspend" ? "user.suspended" : "user.reactivated";
   await writeAdminAudit({
     actor: access.session,
@@ -161,5 +145,5 @@ export async function PATCH(request: Request, context: { params: Promise<{ userI
     after: { status: nextStatus },
     metadata: { reason },
   });
-  return NextResponse.json({ ok: true, status: nextStatus });
+  return NextResponse.json({ ok: true, status: nextStatus, revokedSessions: revoked?.deletedCount ?? 0 });
 }

@@ -1,8 +1,8 @@
 import { createHash, randomBytes } from "node:crypto";
-import { auth } from "@clerk/nextjs/server";
 import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
 import { getSessionUser } from "@/lib/chama-access";
+import { getAuthSession } from "@/lib/auth-server";
 import { hasRecentSecondFactor, impersonationTerminationQuery, impersonationTerminationUpdate, isImpersonationSessionLive, validateImpersonationTarget } from "@/lib/admin/impersonation-policy";
 import connectToDatabase from "@/lib/mongodb";
 import {
@@ -37,8 +37,12 @@ export async function POST(request: Request) {
   const actor = await currentAdmin();
   if (!actor) return NextResponse.json({ error: "Impersonation permission is required." }, { status: 403 });
 
-  const authState = await auth();
-  const factors = authState.factorVerificationAge;
+  const authState = await getAuthSession(request.headers);
+  const authDb = await connectToDatabase();
+  const authUser = authState?.user?.id ? await authDb.collection<Record<string, unknown> & { _id: string }>("auth_user").findOne({ _id: authState.user.id }, { projection: { twoFactorEnabled: 1 } }) : null;
+  const createdAt = authState?.session.createdAt ? new Date(authState.session.createdAt).getTime() : Number.NaN;
+  const ageSeconds = Number.isFinite(createdAt) ? Math.floor((Date.now() - createdAt) / 1000) : Number.POSITIVE_INFINITY;
+  const factors = authUser?.twoFactorEnabled === true ? [ageSeconds, ageSeconds] : [];
   if (!hasRecentSecondFactor(factors, 10 * 60)) {
     return NextResponse.json({ error: "Reauthenticate with your configured second factor within the last 10 minutes before impersonating an account." }, { status: 403 });
   }
@@ -57,7 +61,7 @@ export async function POST(request: Request) {
   const db = await connectToDatabase();
   await ensureAdminIndexes(db);
   const target = await db.collection("user").findOne({ id: targetUserId }, {
-    projection: { _id: 0, id: 1, clerkId: 1, name: 1, email: 1, role: 1, status: 1, banned: 1 },
+    projection: { _id: 0, id: 1, name: 1, email: 1, role: 1, status: 1, banned: 1 },
   });
   if (!target || target.banned === true || target.status === "suspended") {
     return NextResponse.json({ error: "The target account was not found or is suspended." }, { status: 404 });
@@ -81,7 +85,6 @@ export async function POST(request: Request) {
   const session = {
     _id: hash,
     actorId: actor.user.id,
-    actorClerkId: actor.grant.clerkId,
     actorName: actor.user.name ?? actor.user.email ?? "Administrator",
     actorRole: actor.grant.role,
     targetUserId,

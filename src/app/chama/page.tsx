@@ -111,7 +111,8 @@ export default function ChamaDashboardPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
-  const roles = (session?.user?.role ?? "").split(",").map((value: string) => value.trim());
+  const appRole = (session?.user as ({ appRole?: string } | undefined))?.appRole ?? "";
+  const roles = appRole.split(",").map((value: string) => value.trim());
   const canManageGroups = roles.includes("moderator") || roles.includes("admin");
 
   const loadDashboard = useCallback(async () => {

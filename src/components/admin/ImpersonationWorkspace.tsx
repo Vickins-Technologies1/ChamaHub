@@ -64,7 +64,7 @@ export default function ImpersonationWorkspace() {
     <div className="grid gap-3 sm:grid-cols-3">
       <article className="glass-panel p-4"><p className="text-xs text-[var(--muted)]">Account</p><p className="mt-2 font-semibold">{data.account.name || "Unnamed account"}</p><p className="mt-1 text-xs text-[var(--muted)]">{data.account.email || data.account.id}</p></article>
       <article className="glass-panel p-4"><p className="text-xs text-[var(--muted)]">Account role and status</p><p className="mt-2 font-semibold capitalize">{data.account.role} · {data.account.status}</p><p className="mt-1 text-xs text-[var(--muted)]">Joined {date(data.account.createdAt)}</p></article>
-      <article className="glass-panel p-4"><p className="text-xs text-[var(--muted)]">Support context</p><p className="mt-2 text-sm">Read-only account and group details</p><p className="mt-1 text-xs text-[var(--muted)]">No Clerk session or account permissions were changed.</p></article>
+      <article className="glass-panel p-4"><p className="text-xs text-[var(--muted)]">Support context</p><p className="mt-2 text-sm">Read-only account and group details</p><p className="mt-1 text-xs text-[var(--muted)]">No account password or permissions were changed.</p></article>
     </div>
     <section className="glass-panel overflow-hidden">
       <div className="flex items-center gap-2 border-b border-[var(--dash-border)] p-4"><UsersRound size={16} className="text-[var(--button-bg)]" /><h3 className="font-semibold">Group memberships</h3></div>

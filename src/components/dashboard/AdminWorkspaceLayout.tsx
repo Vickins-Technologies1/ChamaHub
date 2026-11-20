@@ -4,15 +4,13 @@ import { useRouter } from "next/navigation";
 import { LayoutDashboard, Users, WalletCards } from "lucide-react";
 import AdminLteShell from "@/components/dashboard/AdminLteShell";
 import { authClient } from "@/lib/auth-client";
-import { useClerk } from "@clerk/nextjs";
 
 export default function AdminWorkspaceLayout({ children }: { children: React.ReactNode }) {
   const { data: session } = authClient.useSession();
-  const { signOut } = useClerk();
   const router = useRouter();
 
   const handleSignOut = async () => {
-    await signOut();
+    await authClient.signOut();
     router.replace("/moderator-login");
     router.refresh();
   };

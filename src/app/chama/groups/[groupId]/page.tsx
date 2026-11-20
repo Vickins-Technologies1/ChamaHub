@@ -555,9 +555,8 @@ export default function ChamaGroupPage() {
     return members.map((member) => member.id);
   }, [group?.rotationOrder, members]);
 
-  const sessionRoleList = session?.user?.role
-    ? session.user.role.split(",").map((value: string) => value.trim())
-    : [];
+  const appRole = (session?.user as ({ appRole?: string } | undefined))?.appRole ?? "";
+  const sessionRoleList = appRole.split(",").map((value: string) => value.trim());
   const isSiteAdmin = sessionRoleList.includes("admin");
   const isModerator = sessionRoleList.includes("moderator");
   const myMember = members.find(

@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
 import { Types } from "mongoose";
-import { auth, currentUser } from "@clerk/nextjs/server";
-import { clerkClient, getAppUserId, syncAppUser } from "@/lib/auth";
+import { getAuthSession, syncAppUser } from "@/lib/auth";
+import connectToDatabase from "@/lib/mongodb";
+import { checkSameOrigin } from "@/lib/admin/access";
 import { connectMongoose } from "@/lib/mongoose";
 import ChamaGroupModel from "@/lib/models/chama-group";
 import ChamaMemberModel from "@/lib/models/chama-member";
@@ -9,6 +10,8 @@ import ChamaRoundModel from "@/lib/models/chama-round";
 import { calculatePotAmount, normalizeFrequency } from "@/lib/chama-utils";
 
 export async function POST(request: Request) {
+  const originError = checkSameOrigin(request);
+  if (originError) return originError;
   const body = await request.json().catch(() => ({}));
   const {
     groupName,
@@ -30,20 +33,17 @@ export async function POST(request: Request) {
   }
 
   try {
-    const { userId } = await auth();
-    if (!userId) return NextResponse.json({ error: "Sign in to finish moderator registration." }, { status: 401 });
-    const createdUser = await currentUser();
-    if (!createdUser) return NextResponse.json({ error: "Your Clerk account could not be loaded." }, { status: 401 });
-    const appUserId = getAppUserId(createdUser);
-    const clerk = await clerkClient();
-    await clerk.users.updateUser(createdUser.id, {
-      publicMetadata: { ...createdUser.publicMetadata, role: "moderator" },
-    });
+    const session = await getAuthSession(request.headers);
+    if (!session?.user) return NextResponse.json({ error: "Sign in to finish moderator registration." }, { status: 401 });
+    const createdUser = session.user;
+    const appUserId = createdUser.id;
     await syncAppUser(createdUser, "moderator");
 
     await connectMongoose();
 
-    const existingGroupId = createdUser.privateMetadata.onboardingGroupId;
+    const database = await connectToDatabase();
+    const existingProfile = await database.collection("user").findOne({ id: appUserId }, { projection: { onboardingGroupId: 1 } });
+    const existingGroupId = existingProfile?.onboardingGroupId;
     if (typeof existingGroupId === "string" && Types.ObjectId.isValid(existingGroupId)) {
       const existingGroup = await ChamaGroupModel.findById(existingGroupId);
       if (existingGroup) {
@@ -52,8 +52,8 @@ export async function POST(request: Request) {
           existingMember = await ChamaMemberModel.create({
             groupId: existingGroup._id,
             userId: appUserId,
-            name: [createdUser.firstName, createdUser.lastName].filter(Boolean).join(" ") || createdUser.primaryEmailAddress?.emailAddress.split("@")[0] || "Moderator",
-            email: createdUser.primaryEmailAddress?.emailAddress.toLowerCase(),
+            name: createdUser.name || createdUser.email.split("@")[0] || "Moderator",
+            email: createdUser.email.toLowerCase(),
             role: "admin",
             status: "active",
             invitedBy: appUserId,
@@ -94,15 +94,13 @@ export async function POST(request: Request) {
       rotationType: "manual",
     });
 
-    await clerk.users.updateUser(createdUser.id, {
-      privateMetadata: { ...createdUser.privateMetadata, onboardingGroupId: String(group._id) },
-    });
+    await database.collection("user").updateOne({ id: appUserId }, { $set: { onboardingGroupId: String(group._id), updatedAt: new Date() } });
 
     const member = await ChamaMemberModel.create({
       groupId: group._id,
       userId: appUserId,
-      name: [createdUser.firstName, createdUser.lastName].filter(Boolean).join(" ") || createdUser.primaryEmailAddress?.emailAddress.split("@")[0] || "Moderator",
-      email: createdUser.primaryEmailAddress?.emailAddress.toLowerCase(),
+      name: createdUser.name || createdUser.email.split("@")[0] || "Moderator",
+      email: createdUser.email.toLowerCase(),
       role: "admin",
       status: "active",
       invitedBy: appUserId,
@@ -133,8 +131,7 @@ export async function POST(request: Request) {
       { status: 201 }
     );
   } catch (error) {
-    const message =
-      error instanceof Error ? error.message : "Failed to create moderator user.";
+    const message = error instanceof Error ? error.message : "Failed to create moderator account.";
     return NextResponse.json({ error: message }, { status: 400 });
   }
 }

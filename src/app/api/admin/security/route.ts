@@ -1,6 +1,5 @@
 import { ObjectId } from "mongodb";
 import { NextResponse } from "next/server";
-import { clerkClient } from "@/lib/auth";
 import { buildSecurityAlertCandidates } from "@/lib/admin/security-policy";
 import connectToDatabase from "@/lib/mongodb";
 import { checkSameOrigin, enforceAdminRateLimit, isSuperAdmin, parsePageParams, requireAdminPermission, writeAdminAudit } from "@/lib/admin/access";
@@ -38,7 +37,7 @@ export async function GET(request: Request) {
     db.collection("admin_audit").find({ occurredAt: { $gte: dayAgo }, action: { $regex: "suspend|staff\\.access|impersonation|maintenance|feature_flag|session", $options: "i" } }, { projection: { actorId: 1, actorRole: 1, action: 1, entityType: 1, entityId: 1, occurredAt: 1, ipAddress: 1, metadata: 1 } }).sort({ occurredAt: -1 }).limit(100).toArray(),
     db.collection("user").find({ $or: [{ banned: true }, { status: "suspended" }] }, { projection: { id: 1, name: 1, email: 1, role: 1, updatedAt: 1 } }).sort({ updatedAt: -1 }).limit(100).toArray(),
     db.collection("admin_impersonation_sessions").find({}, { projection: { actorId: 1, actorName: 1, targetUserId: 1, targetName: 1, reason: 1, status: 1, startedAt: 1, expiresAt: 1, endedAt: 1 } }).sort({ startedAt: -1 }).limit(100).toArray(),
-    db.collection("admin_access").find({ status: "active", role: { $ne: "SUPER_ADMIN" }, clerkId: { $type: "string" } }, { projection: { userId: 1, clerkId: 1, name: 1, email: 1, role: 1 } }).limit(100).toArray(),
+    db.collection("admin_access").find({ status: "active", role: { $ne: "SUPER_ADMIN" } }, { projection: { userId: 1, name: 1, email: 1, role: 1 } }).limit(100).toArray(),
   ]);
 
   const candidates = buildSecurityAlertCandidates({
@@ -52,33 +51,21 @@ export async function GET(request: Request) {
   for (const candidate of candidates) await raiseAlert(db, candidate);
 
   const alertParams = parsePageParams(new URL(request.url).searchParams, 25);
-  const [alertTotal, alerts, clerk] = await Promise.all([
+  const [alertTotal, alerts, storedSessions] = await Promise.all([
     db.collection("admin_security_alerts").countDocuments({}),
     db.collection("admin_security_alerts").find({}).sort({ status: 1, createdAt: -1 }).skip(alertParams.skip).limit(alertParams.pageSize).toArray(),
-    clerkClient(),
+    db.collection<Record<string, unknown> & { _id: string; userId: string }>("auth_session").find({ userId: { $in: grants.map((grant) => String(grant.userId)) }, expiresAt: { $gt: now } }).sort({ createdAt: -1 }).limit(500).toArray(),
   ]);
-  const sessions: Record<string, unknown>[] = [];
-  for (const grant of grants) {
-    try {
-      const result = await clerk.sessions.getSessionList({ userId: String(grant.clerkId), status: "active", limit: 100 });
-      for (const session of result.data) sessions.push({
-        id: session.id, userId: String(grant.userId), name: grant.name ?? grant.email ?? "Staff",
-        role: grant.role, status: session.status, createdAt: new Date(session.createdAt),
-        lastActiveAt: new Date(session.lastActiveAt), expiresAt: new Date(session.expireAt),
-        latestActivity: session.latestActivity ? {
-          isMobile: session.latestActivity.isMobile,
-          ipAddress: session.latestActivity.ipAddress ?? null,
-          city: session.latestActivity.city ?? null,
-          country: session.latestActivity.country ?? null,
-          browserName: session.latestActivity.browserName ?? null,
-          browserVersion: session.latestActivity.browserVersion ?? null,
-          deviceType: session.latestActivity.deviceType ?? null,
-        } : null,
-      });
-    } catch {
-      // Clerk does not return session data for this staff account.
-    }
-  }
+  const grantByUserId = new Map(grants.map((grant) => [String(grant.userId), grant]));
+  const sessions = storedSessions.map((session) => {
+    const grant = grantByUserId.get(String(session.userId));
+    return {
+      id: String(session._id), userId: String(session.userId), name: grant?.name ?? grant?.email ?? "Staff",
+      role: grant?.role ?? "STAFF", status: "active", createdAt: session.createdAt,
+      lastActiveAt: session.updatedAt, expiresAt: session.expiresAt,
+      latestActivity: { ipAddress: session.ipAddress ?? null, userAgent: session.userAgent ?? null },
+    };
+  });
   return NextResponse.json({
     checkedAt: now,
     events: {
@@ -119,12 +106,10 @@ export async function POST(request: Request) {
     const sessionId = typeof body.sessionId === "string" ? body.sessionId : "";
     if (!targetUserId || !sessionId) return NextResponse.json({ error: "A staff account and session ID are required." }, { status: 400 });
     if (!isSuperAdmin(access.session.grant)) return NextResponse.json({ error: "Only the Super Admin can revoke an administrative session." }, { status: 403 });
-    const grant = await db.collection("admin_access").findOne({ userId: targetUserId, status: "active", role: { $ne: "SUPER_ADMIN" }, clerkId: { $type: "string" } });
+    const grant = await db.collection("admin_access").findOne({ userId: targetUserId, status: "active", role: { $ne: "SUPER_ADMIN" } });
     if (!grant) return NextResponse.json({ error: "Administrative staff account not found." }, { status: 404 });
-    const client = await clerkClient();
-    const result = await client.sessions.getSessionList({ userId: String(grant.clerkId), status: "active", limit: 100 });
-    if (!result.data.some((session) => session.id === sessionId)) return NextResponse.json({ error: "That session is not active for the selected staff account." }, { status: 404 });
-    await client.sessions.revokeSession(sessionId);
+    const result = await db.collection<Record<string, unknown> & { _id: string; userId: string }>("auth_session").deleteOne({ _id: sessionId, userId: targetUserId, expiresAt: { $gt: new Date() } });
+    if (result.deletedCount !== 1) return NextResponse.json({ error: "That session is not active for the selected staff account." }, { status: 404 });
     await writeAdminAudit({ actor: access.session, action: "staff.session.revoked", entityType: "admin_access", entityId: targetUserId, request, metadata: { sessionId } });
     return NextResponse.json({ ok: true });
   }

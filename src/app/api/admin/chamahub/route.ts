@@ -4,7 +4,8 @@ import ChamaGroupModel from "@/lib/models/chama-group";
 import ChamaMemberModel from "@/lib/models/chama-member";
 import ChamaRoundModel from "@/lib/models/chama-round";
 import ChamaFinancialTransactionModel from "@/lib/models/chama-financial-transaction";
-import { clerkClient, getAppUserId, getClerkUserByAppId, updateAppUserRole } from "@/lib/auth";
+import { updateAppUserRole } from "@/lib/auth";
+import connectToDatabase from "@/lib/mongodb";
 import {
   checkSameOrigin,
   enforceAdminRateLimit,
@@ -208,9 +209,8 @@ export async function PATCH(request: Request) {
 
       const normalizedEmail = email.trim().toLowerCase();
 
-      const client = await clerkClient();
-      const users = await client.users.getUserList({ emailAddress: [normalizedEmail], limit: 1 });
-      const matchedUser = users.data[0] ?? null;
+      const database = await connectToDatabase();
+      const matchedUser = await database.collection("user").findOne({ email: normalizedEmail }, { projection: { id: 1 } });
 
       const existingMember = await ChamaMemberModel.findOne({
         groupId: group._id,
@@ -218,7 +218,7 @@ export async function PATCH(request: Request) {
       });
 
       if (existingMember) {
-        existingMember.userId = matchedUser ? getAppUserId(matchedUser) : existingMember.userId;
+        existingMember.userId = matchedUser ? String(matchedUser.id) : existingMember.userId;
         existingMember.status = "active";
         await existingMember.save();
       } else {
@@ -227,7 +227,7 @@ export async function PATCH(request: Request) {
           email: normalizedEmail,
           role: "member",
           status: "active",
-          userId: matchedUser ? getAppUserId(matchedUser) : undefined,
+          userId: matchedUser ? String(matchedUser.id) : undefined,
           invitedBy: user.id,
           joinedAt: matchedUser ? new Date() : undefined,
         });
@@ -327,9 +327,10 @@ export async function PATCH(request: Request) {
         );
       }
 
-      const targetUser = await getClerkUserByAppId(member.userId);
-      if (!targetUser) return NextResponse.json({ error: "Linked account was not found in Clerk." }, { status: 404 });
-      const currentRole = typeof targetUser.publicMetadata.role === "string" ? targetUser.publicMetadata.role : "member";
+      const database = await connectToDatabase();
+      const targetUser = await database.collection("user").findOne({ id: member.userId }, { projection: { role: 1 } });
+      if (!targetUser) return NextResponse.json({ error: "Linked account was not found." }, { status: 404 });
+      const currentRole = typeof targetUser.role === "string" ? targetUser.role : "member";
       const roleList = currentRole
         .split(",")
         .map((value) => value.trim())
@@ -338,9 +339,8 @@ export async function PATCH(request: Request) {
         roleList.push("moderator");
       }
       const nextRole = roleList.join(",");
-      const client = await clerkClient();
-      await client.users.updateUser(targetUser.id, { publicMetadata: { ...targetUser.publicMetadata, role: nextRole } });
-      await updateAppUserRole(member.userId, nextRole);
+      const updated = await updateAppUserRole(member.userId, nextRole);
+      if (!updated) return NextResponse.json({ error: "Linked account could not be updated." }, { status: 404 });
 
       member.role = "admin";
       member.status = "active";
@@ -374,9 +374,10 @@ export async function PATCH(request: Request) {
         );
       }
 
-      const targetUser = await getClerkUserByAppId(member.userId);
-      if (!targetUser) return NextResponse.json({ error: "Linked account was not found in Clerk." }, { status: 404 });
-      const currentRole = typeof targetUser.publicMetadata.role === "string" ? targetUser.publicMetadata.role : "member";
+      const database = await connectToDatabase();
+      const targetUser = await database.collection("user").findOne({ id: member.userId }, { projection: { role: 1 } });
+      if (!targetUser) return NextResponse.json({ error: "Linked account was not found." }, { status: 404 });
+      const currentRole = typeof targetUser.role === "string" ? targetUser.role : "member";
       const roleList = currentRole
         .split(",")
         .map((value) => value.trim())
@@ -385,9 +386,8 @@ export async function PATCH(request: Request) {
         roleList.push("member");
       }
       const nextRole = roleList.join(",");
-      const client = await clerkClient();
-      await client.users.updateUser(targetUser.id, { publicMetadata: { ...targetUser.publicMetadata, role: nextRole } });
-      await updateAppUserRole(member.userId, nextRole);
+      const updated = await updateAppUserRole(member.userId, nextRole);
+      if (!updated) return NextResponse.json({ error: "Linked account could not be updated." }, { status: 404 });
 
       member.role = "member";
       await member.save();

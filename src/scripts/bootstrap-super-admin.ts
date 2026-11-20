@@ -1,68 +1,37 @@
-import "dotenv/config";
-import { clerkClient } from "@clerk/nextjs/server";
+import { config as loadEnv } from "dotenv";
 import connectToDatabase from "@/lib/mongodb";
 
+loadEnv({ path: [".env.local", ".env"] });
+
 const email = process.env.SUPER_ADMIN_EMAIL?.trim().toLowerCase();
-if (!email) throw new Error("Set SUPER_ADMIN_EMAIL to the verified email of an existing ChamaPulse account.");
+if (!email) throw new Error("Set SUPER_ADMIN_EMAIL to a verified ChamaPulse account email.");
 
 const database = await connectToDatabase();
-const clerk = await clerkClient();
-const clerkResult = await clerk.users.getUserList({ emailAddress: [email], limit: 2 });
-const matchingClerkUsers = clerkResult.data.filter((user) =>
-  user.emailAddresses.some((address) => address.emailAddress.toLowerCase() === email && address.verification?.status === "verified"),
-);
-if (matchingClerkUsers.length !== 1) {
-  throw new Error("The email must match exactly one existing Clerk account with a verified email address.");
+const identity = await database.collection("auth_user").findOne({ email, emailVerified: true }, { projection: { _id: 1, email: 1, name: 1 } });
+if (!identity || identity._id == null) {
+  throw new Error("The email must match exactly one verified Better Auth account. The owner must first claim the account and verify its email.");
 }
+const identityId = String(identity._id);
+const user = await database.collection("user").findOne({ id: identityId }, { projection: { id: 1, email: 1, name: 1 } });
+if (!user || typeof user.id !== "string") throw new Error("The verified identity is not linked to a ChamaPulse profile.");
+if (user.email?.toLowerCase() !== email) throw new Error("The ChamaPulse profile email does not match the verified account email.");
 
-const identity = matchingClerkUsers[0];
-const user = await database.collection("user").findOne({ clerkId: identity.id }, { projection: { id: 1, email: 1, name: 1 } });
-if (!user || typeof user.id !== "string") {
-  throw new Error("The Clerk account is not linked to an existing ChamaPulse user. Sign in to the app once, then retry.");
-}
-if (typeof user.email !== "string" || user.email.toLowerCase() !== email) {
-  throw new Error("The ChamaPulse account email does not match the verified Clerk email.");
-}
-
-const access = database.collection("admin_access");
-const activeOwners = await access.countDocuments({ role: "SUPER_ADMIN", status: "active" });
-const existing = await access.findOne({ userId: user.id });
-if (activeOwners > 0 && existing?.role !== "SUPER_ADMIN") {
-  throw new Error("A Super Admin is already provisioned. Use the /admin staff controls to grant other administrative roles.");
-}
+const grants = database.collection("admin_access");
+await grants.createIndex({ userId: 1 }, { unique: true });
+const existing = await grants.findOne({ role: "SUPER_ADMIN", status: "active" });
+if (existing) throw new Error("A Super Admin already exists. Use the in-app staff controls to grant later administrator roles.");
 
 const now = new Date();
-await access.updateOne(
-  { userId: user.id },
-  {
-    $set: {
-      userId: user.id,
-      clerkId: identity.id,
-      email,
-      name: typeof user.name === "string" ? user.name : null,
-      role: "SUPER_ADMIN",
-      permissions: [],
-      status: "active",
-      expiresAt: null,
-      updatedAt: now,
-      createdBy: "verified-email-bootstrap",
-    },
-    $setOnInsert: { createdAt: now },
-  },
-  { upsert: true },
-);
-await database.collection("admin_audit").insertOne({
-  actorId: "system-bootstrap",
-  actorRole: "SYSTEM",
-  action: "super_admin.provisioned",
-  entityType: "admin_access",
-  entityId: user.id,
-  occurredAt: now,
-  ipAddress: null,
-  before: existing ? { role: existing.role, status: existing.status } : null,
-  after: { role: "SUPER_ADMIN", status: "active" },
-  metadata: { email },
-  impersonation: null,
+await grants.insertOne({
+  userId: user.id,
+  email,
+  name: typeof user.name === "string" ? user.name : null,
+  role: "SUPER_ADMIN",
+  permissions: ["*"],
+  status: "active",
+  expiresAt: null,
+  createdBy: "bootstrap",
+  createdAt: now,
+  updatedAt: now,
 });
-
-console.log(`Provisioned the verified ChamaPulse account ${email} as SUPER_ADMIN.`);
+console.log(`Super Admin access provisioned for ${email}.`);

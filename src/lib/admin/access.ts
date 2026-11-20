@@ -12,7 +12,6 @@ export type { AdminPermission, AdminRole } from "./policy";
 
 export type AdminGrant = {
   userId: string;
-  clerkId: string;
   email: string | null;
   name: string | null;
   role: AdminRole;
@@ -35,6 +34,7 @@ export async function ensureAdminIndexes(db?: Db) {
         database.collection("admin_access").createIndex({ userId: 1 }, { unique: true }),
         database.collection("admin_access").createIndex({ status: 1, role: 1 }),
         database.collection("admin_access_invites").createIndex({ inviteId: 1 }, { unique: true }),
+        database.collection("admin_access_invites").createIndex({ inviteTokenHash: 1 }, { unique: true, partialFilterExpression: { inviteTokenHash: { $type: "string" } } }),
         database.collection("admin_access_invites").createIndex({ email: 1, status: 1 }),
         database.collection("admin_audit").createIndex({ occurredAt: -1, _id: -1 }),
         database.collection("admin_audit").createIndex({ actorId: 1, occurredAt: -1 }),
@@ -258,7 +258,6 @@ export async function writeAdminAudit(input: {
 export function sanitizeAdminGrant(grant: Document) {
   return {
     userId: String(grant.userId),
-    clerkId: String(grant.clerkId ?? ""),
     email: typeof grant.email === "string" ? grant.email : null,
     name: typeof grant.name === "string" ? grant.name : null,
     role: grant.role,

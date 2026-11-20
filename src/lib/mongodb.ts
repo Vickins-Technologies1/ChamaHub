@@ -44,4 +44,10 @@ async function connectToDatabase(): Promise<import('mongodb').Db> {
   return cached.client.db(MONGODB_DB);
 }
 
+export async function getMongoClient(): Promise<MongoClient> {
+  await connectToDatabase();
+  if (!cached.client) throw new Error("MongoDB connection was not initialized.");
+  return cached.client;
+}
+
 export default connectToDatabase;

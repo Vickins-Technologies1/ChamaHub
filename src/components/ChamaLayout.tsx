@@ -4,15 +4,13 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { authClient } from "@/lib/auth-client";
-import { useClerk } from "@clerk/nextjs";
 import { PremiumDashboardShellLoader } from "@/components/dashboard/DashboardLoaders";
 import AdminLteShell from "@/components/dashboard/AdminLteShell";
-import { LayoutDashboard, Users, CalendarCheck, ClipboardList, Wallet, Sparkles, Bell, LifeBuoy } from "lucide-react";
+import { LayoutDashboard, Users, CalendarCheck, ClipboardList, Wallet, Sparkles, Bell, LifeBuoy, KeyRound } from "lucide-react";
 import { PlatformFeatureProvider } from "@/lib/platform/feature-context";
 
 export default function ChamaLayout({ children }: { children: React.ReactNode }) {
   const { data: session, isPending } = authClient.useSession();
-  const { signOut } = useClerk();
   const router = useRouter();
   const [rolePanels, setRolePanels] = useState({
     hasGroupAdmin: false,
@@ -89,8 +87,9 @@ export default function ChamaLayout({ children }: { children: React.ReactNode })
     );
   }
 
-  const roleList = session.user.role
-    ? session.user.role.split(",").map((value: string) => value.trim())
+  const userRole = (session.user as typeof session.user & { appRole?: string }).appRole;
+  const roleList = userRole
+    ? userRole.split(",").map((value: string) => value.trim())
     : [];
   const isModerator = roleList.includes("moderator") || roleList.includes("admin");
   const canViewGroups =
@@ -103,6 +102,7 @@ export default function ChamaLayout({ children }: { children: React.ReactNode })
     ...(featureEnabled("contributions") ? [{ href: "/chama/ledger", label: "Contributions", icon: CalendarCheck }] : []),
     ...(featureEnabled("notifications") ? [{ href: "/chama/notifications", label: "Notifications", icon: Bell }] : []),
     { href: "/chama/support", label: "Support", icon: LifeBuoy },
+    { href: "/account/security", label: "Security & devices", icon: KeyRound },
   ];
   const groupTools = [
     ...(rolePanels.hasSecretary ? [{ href: "/chama/secretary", label: "Secretary", icon: ClipboardList }] : []),
@@ -110,8 +110,8 @@ export default function ChamaLayout({ children }: { children: React.ReactNode })
   ];
 
   const handleSignOut = async () => {
-    await signOut();
-    const role = session.user.role ?? "";
+    await authClient.signOut();
+    const role = userRole ?? "";
     const moderator = role.split(",").map((value) => value.trim()).includes("moderator");
     router.replace(moderator ? "/moderator-login" : "/member-login");
     router.refresh();

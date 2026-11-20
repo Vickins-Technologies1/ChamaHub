@@ -12,14 +12,16 @@
     "test:watch": "vitest",
     "test:ci": "vitest run",
     "finance:migrate": "tsx src/scripts/migrate-financial-ledger.ts",
-    "auth:migrate-clerk": "tsx src/scripts/migrate-betterauth-to-clerk.ts",
+    "auth:migrate-legacy": "tsx src/scripts/migrate-legacy-auth.ts",
     "admin:bootstrap": "tsx src/scripts/bootstrap-super-admin.ts"
   },
   "dependencies": {
-    "@clerk/nextjs": "^7.9.26",
+    "@better-auth/mongo-adapter": "1.7.27",
     "@heroicons/react": "^2.2.0",
+    "@node-rs/argon2": "^2.2.2",
     "@react-pdf/renderer": "^4.3.2",
     "bcryptjs": "^3.0.3",
+    "better-auth": "1.7.27",
     "dotenv": "^17.2.3",
     "framer-motion": "^12.23.22",
     "html5-qrcode": "^2.3.8",

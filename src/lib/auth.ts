@@ -1,50 +1,55 @@
-import { clerkClient } from "@clerk/nextjs/server";
 import connectToDatabase from "@/lib/mongodb";
+import { getAuth, getAuthSession } from "@/lib/auth-server";
 
-export { clerkClient };
+export { getAuth, getAuthSession };
 
-/**
- * ChamaPulse uses Clerk as its identity provider. Keep this small adapter in
- * one place so server routes don't depend on Clerk's SDK shape directly.
- */
-export const getClerkUserByAppId = async (appUserId: string) => {
-  const client = await clerkClient();
-  const result = await client.users.getUserList({ externalId: [appUserId], limit: 1 });
-  return result.data[0] ?? null;
-};
+export const getAppUserId = (user: { id: string }) => user.id;
 
-export const getAppUserId = (user: { id: string; externalId?: string | null }) =>
-  user.externalId || user.id;
-
-export const syncAppUser = async (user: {
+export async function syncAppUser(user: {
   id: string;
-  externalId?: string | null;
-  primaryEmailAddress?: { emailAddress: string } | null;
-  firstName?: string | null;
-  lastName?: string | null;
-  publicMetadata: Record<string, unknown>;
-}, role?: string) => {
+  email?: string | null;
+  name?: string | null;
+  appRole?: string | null;
+}, role?: string) {
   const db = await connectToDatabase();
-  const id = getAppUserId(user);
-  const name = [user.firstName, user.lastName].filter(Boolean).join(" ") || null;
+  const id = user.id;
+  const email = user.email?.trim().toLowerCase() ?? null;
+  const name = user.name?.trim() || null;
   const update: Record<string, unknown> = {
-    clerkId: user.id,
-    email: user.primaryEmailAddress?.emailAddress?.toLowerCase() ?? null,
-    name,
+    ...(email ? { email } : {}),
+    ...(name ? { name } : {}),
     updatedAt: new Date(),
   };
   if (role) update.role = role;
-  else if (typeof user.publicMetadata.role === "string") update.role = user.publicMetadata.role;
+  else if (typeof user.appRole === "string") update.role = user.appRole;
   await db.collection("user").updateOne(
     { id },
-    { $set: update, $setOnInsert: { id, createdAt: new Date() } },
+    { $set: update, $setOnInsert: { id, role: role ?? user.appRole ?? "member", createdAt: new Date() } },
     { upsert: true },
   );
-  return { id, email: update.email as string | null, name, role: update.role as string | undefined };
-};
+  if (role) {
+    await db.collection<Record<string, unknown> & { _id: string }>("auth_user").updateOne({ _id: id }, { $set: { appRole: role, updatedAt: new Date() } });
+  }
+  const account = await db.collection("user").findOne({ id }, { projection: { _id: 0, id: 1, email: 1, name: 1, role: 1 } });
+  return {
+    id,
+    email: typeof account?.email === "string" ? account.email : email,
+    name: typeof account?.name === "string" ? account.name : name,
+    role: typeof account?.role === "string" ? account.role : role ?? user.appRole ?? "member",
+  };
+}
 
-export const updateAppUserRole = async (appUserId: string, role: string) => {
+export async function updateAppUserRole(appUserId: string, role: string) {
   const db = await connectToDatabase();
   const result = await db.collection("user").updateOne({ id: appUserId }, { $set: { role, updatedAt: new Date() } });
+  if (result.matchedCount) {
+    await db.collection<Record<string, unknown> & { _id: string }>("auth_user").updateOne({ _id: appUserId }, { $set: { appRole: role, updatedAt: new Date() } });
+  }
   return result.matchedCount > 0;
-};
+}
+
+export async function revokeUserSessions(appUserId: string) {
+  const db = await connectToDatabase();
+  const result = await db.collection("auth_session").deleteMany({ userId: appUserId });
+  return result.deletedCount;
+}

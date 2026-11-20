@@ -1,25 +1,23 @@
 import { NextResponse } from "next/server";
-import { auth, currentUser } from "@clerk/nextjs/server";
-import { clerkClient, syncAppUser } from "@/lib/auth";
+import { getAuthSession, syncAppUser } from "@/lib/auth";
 import { linkMemberToUser } from "@/lib/chama-access";
+import connectToDatabase from "@/lib/mongodb";
 
-export async function POST() {
-  const { userId } = await auth();
-  if (!userId) return NextResponse.json({ error: "Sign in to finish creating your account." }, { status: 401 });
-  const user = await currentUser();
-  if (!user) return NextResponse.json({ error: "Your Clerk account could not be loaded." }, { status: 401 });
-
-  const existingRole = typeof user.publicMetadata.role === "string" ? user.publicMetadata.role : "member";
-  if (existingRole.split(",").map((role) => role.trim()).some((role) => ["admin", "moderator"].includes(role))) {
+export async function POST(request: Request) {
+  const origin = request.headers.get("origin");
+  const host = request.headers.get("x-forwarded-host")?.split(",")[0]?.trim() ?? request.headers.get("host");
+  if (origin && (!host || new URL(origin).host.toLowerCase() !== host.toLowerCase())) {
+    return NextResponse.json({ error: "Cross-origin requests are not allowed." }, { status: 403 });
+  }
+  const session = await getAuthSession(request.headers);
+  if (!session?.user) return NextResponse.json({ error: "Sign in to finish creating your account." }, { status: 401 });
+  const db = await connectToDatabase();
+  const existing = await db.collection("user").findOne({ id: session.user.id }, { projection: { role: 1 } });
+  const existingRole = typeof existing?.role === "string" ? existing.role : "member";
+  if (existingRole.split(",").map((value: string) => value.trim()).includes("moderator")) {
     return NextResponse.json({ error: "This account already has moderator access." }, { status: 409 });
   }
-
-  const client = await clerkClient();
-  await client.users.updateUser(user.id, {
-    publicMetadata: { ...user.publicMetadata, role: "member" },
-  });
-
-  const member = await syncAppUser(user, "member");
+  const member = await syncAppUser(session.user, "member");
   await linkMemberToUser(member);
   return NextResponse.json({ user: member });
 }

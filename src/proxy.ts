@@ -1,6 +1,6 @@
-import { clerkMiddleware } from "@clerk/nextjs/server";
 import { NextResponse, type NextRequest } from "next/server";
 import connectToDatabase from "@/lib/mongodb";
+import { getAuthSession } from "@/lib/auth-server";
 import { createHash } from "node:crypto";
 import { featureForRequest, isMaintenanceRouteAffected } from "@/lib/platform/policy";
 
@@ -32,19 +32,17 @@ async function featureIsEnabled(key: string) {
   return enabled;
 }
 
-async function isPlatformAdmin(clerkUserId: string | null) {
-  if (!clerkUserId) return false;
+async function isPlatformAdmin(userId: string | null) {
+  if (!userId) return false;
   const db = await connectToDatabase();
-  const user = await db.collection("user").findOne({ clerkId: clerkUserId }, { projection: { id: 1 } });
-  if (typeof user?.id !== "string") return false;
   return Boolean(await db.collection("admin_access").findOne({
-    userId: user.id,
+    userId,
     status: "active",
     $or: [{ expiresAt: null }, { expiresAt: { $exists: false } }, { expiresAt: { $gt: new Date() } }],
   }, { projection: { _id: 1 } }));
 }
 
-export default clerkMiddleware(async (auth, request) => {
+export async function proxy(request: NextRequest) {
   const path = request.nextUrl.pathname;
   const isAuthRoute = authRoutes.some((prefix) => isPrefix(path, prefix));
   const alwaysAvailable = alwaysAvailablePrefixes.some((prefix) => isPrefix(path, prefix)) || /\/(?:callback|webhook)(?:\/|$)/i.test(path);
@@ -52,12 +50,12 @@ export default clerkMiddleware(async (auth, request) => {
   const impersonationToken = request.cookies.get("chp_admin_impersonation")?.value;
   if (impersonationToken && path !== "/admin" && path !== "/api/admin/impersonation") {
     try {
-      const authState = await auth();
+      const authState = await getAuthSession(request.headers);
       const db = await connectToDatabase();
-      const actor = authState.userId ? await db.collection("user").findOne({ clerkId: authState.userId }, { projection: { id: 1 } }) : null;
-      const session = actor?.id ? await db.collection<{ _id: string }>("admin_impersonation_sessions").findOne({
+      const actorId = authState?.user.id;
+      const session = actorId ? await db.collection<{ _id: string }>("admin_impersonation_sessions").findOne({
         _id: createHash("sha256").update(impersonationToken).digest("hex"),
-        actorId: String(actor.id),
+        actorId,
         status: "active",
         expiresAt: { $gt: new Date() },
       }, { projection: { _id: 1 } }) : null;
@@ -89,8 +87,8 @@ export default clerkMiddleware(async (auth, request) => {
   if (maintenance?.enabled !== true) return;
   const configuredRoutes = Array.isArray(maintenance.affectedRoutes) ? maintenance.affectedRoutes.filter((item): item is string => typeof item === "string") : ["/"];
   if (!isMaintenanceRouteAffected(path, configuredRoutes)) return;
-  const authState = await auth();
-  if (maintenance.exemptAdmins !== false && await isPlatformAdmin(authState.userId ?? null)) return;
+  const authState = await getAuthSession(request.headers);
+  if (maintenance.exemptAdmins !== false && await isPlatformAdmin(authState?.user.id ?? null)) return;
   if (path.startsWith("/api/")) {
     return NextResponse.json({
       error: typeof maintenance.announcement === "string" ? maintenance.announcement : "ChamaPulse is undergoing scheduled maintenance.",
@@ -101,7 +99,7 @@ export default clerkMiddleware(async (auth, request) => {
   const redirect = new URL("/maintenance", request.url);
   redirect.searchParams.set("from", path);
   return NextResponse.redirect(redirect);
-});
+}
 
 export const config = {
   matcher: [

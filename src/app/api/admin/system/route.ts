@@ -21,9 +21,9 @@ export async function GET() {
   return NextResponse.json({
     checkedAt: new Date(),
     services: {
-      application: { status: "running", framework: "Next.js", authentication: "Clerk" },
+      application: { status: "running", framework: "Next.js", authentication: "Better Auth" },
       database: { status: database, kind: "MongoDB" },
-      authentication: { status: process.env.CLERK_SECRET_KEY && process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY ? "configured" : "incomplete", provider: "Clerk" },
+      authentication: { status: process.env.BETTER_AUTH_SECRET && process.env.MONGODB_URI ? "configured" : "incomplete", provider: "Better Auth" },
       email: { status: process.env.EMAIL_USER && process.env.EMAIL_PASS ? "configured" : "not configured" },
       sms: { status: process.env.TWILIO_ACCOUNT_SID && process.env.TWILIO_AUTH_TOKEN && process.env.TWILIO_PHONE_NUMBER ? "configured" : "not configured" },
       paymentGateway: { status: "disabled", provider: "M-Pesa", ready: mpesa.ready, mode: mpesa.mode, missingConfigurationKeys: mpesa.missing },
@@ -33,7 +33,7 @@ export async function GET() {
       featureFlags: FEATURE_REGISTRY.length + " global switches available",
       subscriptions: "not implemented",
       supportTickets: "implemented in the platform support store",
-      loginHistory: "not available from the current application data model",
+      loginHistory: "authentication session events are stored in MongoDB",
       backgroundJobHistory: "not stored",
     },
   }, { headers: { "Cache-Control": "no-store" } });

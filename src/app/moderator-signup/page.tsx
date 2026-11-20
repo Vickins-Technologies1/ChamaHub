@@ -26,7 +26,7 @@ export default function ModeratorSignupPage() {
     router.push("/auth/enroll?role=moderator");
   };
 
-  return <AuthShell eyebrow="Moderator Signup" title="Launch your first ChamaPulse group." subtitle="Set up the group first, then create and verify your moderator account with Clerk." brandTitle="Moderator Access" brandSubtitle="Launch a secure group workspace." brandPoints={["Define contribution cycles and payout schedules.", "Invite members and track every payment.", "Run your group with clear records."]}>
+  return <AuthShell eyebrow="Moderator Signup" title="Launch your first ChamaPulse group." subtitle="Set up the group first, then create and verify your moderator account." brandTitle="Moderator Access" brandSubtitle="Launch a secure group workspace." brandPoints={["Define contribution cycles and payout schedules.", "Invite members and track every payment.", "Run your group with clear records."]}>
     <form onSubmit={submit} className="space-y-4">
       <input className={inputClass} placeholder="Chama group name" value={form.groupName} onChange={(e) => setForm({ ...form, groupName: e.target.value })} required />
       <input className={inputClass} placeholder="Group description (optional)" value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} />

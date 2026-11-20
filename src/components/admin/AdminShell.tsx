@@ -1,8 +1,8 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useClerk } from "@clerk/nextjs";
-import { Activity, Banknote, Bell, ChartNoAxesCombined, LayoutDashboard, ScrollText, Settings2, ShieldAlert, ShieldCheck, SlidersHorizontal, Users, UsersRound } from "lucide-react";
+import { authClient } from "@/lib/auth-client";
+import { Activity, Banknote, Bell, ChartNoAxesCombined, KeyRound, LayoutDashboard, ScrollText, Settings2, ShieldAlert, ShieldCheck, SlidersHorizontal, Users, UsersRound } from "lucide-react";
 import AdminLteShell, { type DashboardNavSection } from "@/components/dashboard/AdminLteShell";
 import type { AdminPermission, AdminRole } from "@/lib/admin/access";
 import ImpersonationWorkspace from "@/components/admin/ImpersonationWorkspace";
@@ -23,7 +23,6 @@ export default function AdminShell({
   children: React.ReactNode;
 }) {
   const router = useRouter();
-  const { signOut } = useClerk();
   const available = (permission: AdminPermission) => role === "SUPER_ADMIN" || permissions.includes(permission);
   const sections: DashboardNavSection[] = [
     { label: "Platform", items: [
@@ -43,10 +42,11 @@ export default function AdminShell({
       ...(available("system.settings.write") ? [{ href: "/admin/maintenance", label: "Maintenance", icon: Settings2 }] : []),
       ...(available("features.write") ? [{ href: "/admin/features", label: "Feature management", icon: SlidersHorizontal }] : []),
     ] },
+    { label: "Account", items: [{ href: "/account/security", label: "Security & devices", icon: KeyRound }] },
   ];
 
   const handleSignOut = async () => {
-    await signOut();
+    await authClient.signOut();
     router.replace("/member-login");
     router.refresh();
   };

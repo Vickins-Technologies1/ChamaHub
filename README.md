@@ -7,7 +7,7 @@ Production website: https://chamapulse.vickinstechnologies.com/
 ## Stack
 
 - Next.js App Router with TypeScript
-- Clerk for managed authentication and password recovery
+- Better Auth with MongoDB-backed sessions, Argon2id password hashes, email verification, recovery, and optional TOTP two-step verification
 - Mongoose models for chama data
 - Nodemailer for email, optional Twilio SMS, and Google Meet attendance sync
 
@@ -20,57 +20,62 @@ Production website: https://chamapulse.vickinstechnologies.com/
 
 ## Data and accounts
 
-Set `MONGODB_URI` to the MongoDB cluster that contains existing group data. The default database name is `Viuckins101`; retain it to keep existing groups and account profiles available. Keep the existing `CHAMAHUB_MONGODB_DB` variable name for compatibility. Configure `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY` and `CLERK_SECRET_KEY` from the Clerk instance, and set `NEXT_PUBLIC_SITE_URL` to `https://chamapulse.vickinstechnologies.com` in production. Local development uses `http://localhost:3000`.
+Set `MONGODB_URI` to the MongoDB cluster that contains existing group data. Keep the current `CHAMAHUB_MONGODB_DB` value so group, financial, and account profile collections remain available. Set `BETTER_AUTH_SECRET` to a unique random value with at least 32 characters, `BETTER_AUTH_URL` to the canonical app URL, and `EMAIL_USER`/`EMAIL_PASS` for verification and recovery mail. In production, use the public HTTPS URL for `BETTER_AUTH_URL` and `NEXT_PUBLIC_SITE_URL`. Local development uses `http://localhost:3000`.
 
-### Authentication migration
+### Authentication migration and cutover
 
-Clerk owns sign-in, email verification, and password recovery. Configure email/password sign-in and email verification in the Clerk Dashboard, then set the Clerk keys in the deployment environment. Existing Better Auth password hashes use a format Clerk cannot import. Before deploying the provider switch, back up MongoDB and run the one-time account import with production Clerk and MongoDB credentials:
+Better Auth stores identities in `auth_user`, credentials in `auth_account`, and sessions in `auth_session`. It uses the existing MongoDB client and keeps each ChamaPulse account `id` as the authentication user ID. Group, ledger, and other business collections are not rewritten. New registrations require email verification, and migrated users can use the password recovery flow to set a new password. Password hashes from the previous provider are never copied or assumed to be portable.
+
+The migration script is read-only by default. Run the audit against a restored staging copy first, review all conflicts, and optionally provide a trusted identity export to preserve verified-email status and profile details:
 
 ```powershell
-pnpm auth:migrate-clerk
+pnpm auth:migrate-legacy
+pnpm auth:migrate-legacy -- --identity-export .\legacy-identities.json
 ```
 
-The import preserves each legacy account ID as the Clerk external ID so group membership, ownership, and financial audit records keep their existing references. It assigns every legacy account an unknown random password; each existing user must choose a new password using **Forgot password** after cutover. The import is safe to rerun: it updates users by external ID or matching email rather than creating duplicates. Do not deploy the Clerk cutover until the import completes and the Clerk email/password recovery settings and production keys are in place.
+The script reports duplicate/missing identity data as counts and does not print raw email addresses or account IDs. Without a trusted identity export, email addresses remain unverified unless the existing Better Auth identity already has a verified status. Applying the migration overwrites each first-time migrated credential with a random, unusable Argon2id password; users must request a password reset. The migration marker makes reruns idempotent, and existing sessions are revoked after migration. It does not modify the business `user` collection.
+
+Production cutover requires an operator-run MongoDB backup and restore test, verification of SMTP delivery and password-reset completion using a migrated test account, a reviewed dry-run report, and a rollback plan. Only after those recovery checks pass should the operator set `AUTH_MIGRATION_BACKUP_CONFIRMED=YES` and run `pnpm auth:migrate-legacy -- --apply` against the intended database. Keep the old provider and its account data available through the agreed rollback window. This repository change does not run that production migration or switch production traffic.
 
 ### Super Admin access
 
-Platform administration uses the separate `admin_access` collection. A Chama group administrator or a user with a legacy `role: "admin"` value does not receive `/admin` access from that role alone. After Clerk and MongoDB are configured, sign in to the app once with the existing account that will own platform access, then provision the first Super Admin from a secure operator shell:
+Platform administration uses the separate `admin_access` collection. A Chama group administrator or a user with a legacy `role: "admin"` value does not receive `/admin` access from that role alone. After Better Auth is configured and the owner account has verified its email, provision the first Super Admin from a secure operator shell:
 
 ```powershell
 $env:SUPER_ADMIN_EMAIL = "owner@example.com"
 pnpm admin:bootstrap
 ```
 
-The command requires exactly one existing Clerk account with that verified email and a matching ChamaPulse user record. It refuses to provision a second Super Admin. Protect the owner account with Clerk MFA. Do not put the email or other runtime credentials in source control; later administrator roles are granted from `/admin` and are stored separately from group membership.
+The command requires exactly one verified Better Auth account with that email and a matching ChamaPulse user record. It refuses to provision a second Super Admin. Enable TOTP from `/account/security` for the owner account. Do not put the email or other runtime credentials in source control; later administrator roles are granted from `/admin` and are stored separately from group membership.
 
 `/admin` reads grants from `admin_access`; roles or permissions in a browser session and ordinary chama member roles do not grant access. The first admin request creates indexes for admin audit/access collections and the paginated admin queries. The `admin_access_invites`, `admin_audit`, `admin_action_limits`, and `admin_user_notes` collections are created as needed.
 
 Admin API surface:
 
 - `GET /api/admin/dashboard` — date-filtered platform counts, trends, and recent records.
-- `GET /api/admin/users`, `GET /api/admin/users/:userId`, `PATCH /api/admin/users/:userId` — paginated accounts, group/ledger history, notes, session revocation, suspension, reactivation, and secure recovery instructions through the existing Clerk flow.
+- `GET /api/admin/users`, `GET /api/admin/users/:userId`, `PATCH /api/admin/users/:userId` — paginated accounts, group/ledger history, notes, Better Auth session revocation, suspension, reactivation, and password recovery email.
 - `GET /api/admin/groups`, `GET /api/admin/groups/:groupId`, `PATCH /api/admin/groups/:groupId` — paginated group records and read-only profiles; status updates use the existing active/archived values.
 - `GET /api/admin/finance` — paginated, read-only financial ledger; CSV export is available with `format=csv`.
-- `GET /api/admin/staff`, `POST /api/admin/staff` — existing-account grants and Clerk email invitations with role, module permissions, and optional expiry. Invitation access is activated only after the invited Clerk account verifies and claims its invitation.
+- `GET /api/admin/staff`, `POST /api/admin/staff` — existing-account grants and secure email invitations with role, module permissions, and optional expiry. Invitation access activates only after the invited Better Auth account verifies its email and claims the invitation.
 - `GET /api/admin/audit` — filters and paginated audit history; CSV export is available with `format=csv`.
 - `GET /api/admin/system` — read-only database and integration readiness. It never returns secret values.
 
 Phase 2 adds these operations endpoints:
 
 - `GET /api/admin/staff`, `POST /api/admin/staff` — paginated staff grants, invitation status, invitation revocation, and Super Admin managed role/permission updates. `GET /api/admin/staff/:userId` returns that staff member's recent audit history and recorded metrics.
-- `POST`, `GET`, and `DELETE /api/admin/impersonation` — start, inspect, and terminate a short-lived restricted troubleshooting session. Starting requires both Clerk verification factors within ten minutes and a reason. The session uses a hashed opaque token and never creates a Clerk session as the target. It presents a read-only account workspace and blocks ordinary application routes and APIs until exit or expiry.
+- `POST`, `GET`, and `DELETE /api/admin/impersonation` — start, inspect, and terminate a short-lived restricted troubleshooting session. Starting requires recent Better Auth authentication, enabled two-step verification, and a reason. The session uses a hashed opaque token and never creates a session as the target. It presents a read-only account workspace and blocks ordinary application routes and APIs until exit or expiry.
 - `GET /api/admin/notifications`, `POST /api/admin/notifications` — draft, preview, publish, schedule, archive, and inspect platform notifications. Audience resolution filters inactive/suspended accounts and deduplicates recipients. The scheduler uses the existing authenticated `/api/jobs/chama-call-notifications` job endpoint and pauses notification delivery while the global notifications feature flag is off. Delivery batches are limited to 100 recipients per job run and each audience to 50,000 recipients. In-app records are reported only after insertion; email is reported as `accepted_by_smtp`, failed, unavailable, or outcome unknown. SMTP acceptance is not proof of inbox delivery. Push notifications are not configured.
 - `GET /api/admin/maintenance`, `PUT /api/admin/maintenance` — inspect and update global maintenance settings. `/admin`, auth callbacks, webhooks, payment callbacks, and background jobs remain reachable. Middleware enforces affected route prefixes server-side and caches settings for up to five seconds.
 - `GET /api/admin/features`, `PATCH /api/admin/features` — inspect and change registered global feature switches. Middleware blocks mapped writes and signup entry points server-side; navigation and actions also follow public feature state. Enforcement caches values for up to five seconds. Per-environment overrides are not configured.
 - `GET /api/admin/support/tickets`, `POST /api/admin/support/tickets` — staff queue, assignment, status, priority, internal notes, and replies. Users can create tickets, reply to their own tickets, and view their own history through `/api/chama/support/tickets`; create and reply actions have per-account rate limits. Tickets can reference a user's own group and ledger rows; support actions never write financial records. File attachments are not enabled because no secure upload store is configured.
-- `GET /api/admin/security`, `POST /api/admin/security` — security events, generated alerts, active Clerk administrative sessions where available, and authorized staff-session revocation. Login history is not available; no synthetic IP, device, or login data is generated.
+- `GET /api/admin/security`, `POST /api/admin/security` — security events, generated alerts, active Better Auth administrative sessions, and authorized staff-session revocation. Authentication events are stored in MongoDB; device and IP details are shown only when the request supplied them.
 - `GET /api/admin/analytics` — date-filtered account, group, member, staff audit, ticket-resolution, and ledger summaries; `format=csv` exports the report with the `reports.export` permission. Financial amounts are separated by currency and displayed in minor units. Verified contribution rows are ledger statuses, not payment-provider confirmation, and ledger totals are not platform-held funds.
 
 The Phase 2 collections are `admin_impersonation_sessions` (hashed session token and original/target identities), `admin_notifications`, `admin_notification_recipients` (idempotent recipient queue), `user_notifications`, `platform_settings`, `platform_feature_flags`, `platform_feature_flag_history`, `admin_support_tickets`, `admin_security_events`, and `admin_security_alerts`. Admin indexes are created by the existing centralized index initializer. Notification recipients have a unique notification/user index to prevent duplicate in-app records.
 
 Administrative audit rows are application append-only: there are no update or delete endpoints. Sensitive writes and report exports record actor, target, time, request IP when available, and filtered before/after data. The MongoDB deployment should also use an application DB principal without collection drop/delete privileges for audit collections and restricted operator access; application code cannot protect logs from a MongoDB owner.
 
-The admin console intentionally does not create or alter financial balances. Contributions and payouts remain visible from `ChamaFinancialTransaction`; a correction must use the existing reversal/adjustment business flow. The repository has no subscription or billing models, so plans, revenue, and payment history are not fabricated. Active-user history, retention, feature adoption, authentication failures, and persisted system/job error history are also unavailable because the application does not store those events. Security alerts are derived from available admin audit and rate-limit records. Email recovery notifications use the existing Clerk recovery page; password values and tokens are never handled by admin endpoints. Account deletion is not provided because the app has no approved user-retention/deletion workflow for linked financial records.
+The admin console intentionally does not create or alter financial balances. Contributions and payouts remain visible from `ChamaFinancialTransaction`; a correction must use the existing reversal/adjustment business flow. The repository has no subscription or billing models, so plans, revenue, and payment history are not fabricated. Active-user history, retention, feature adoption, and persisted system/job error history are not available because the application does not store those events. Security alerts are derived from available admin audit and rate-limit records. Password values and reset tokens are never handled by admin endpoints. Account deletion is not provided because the app has no approved user-retention/deletion workflow for linked financial records.
 
 ## Notifications and attendance
 

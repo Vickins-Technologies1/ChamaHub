@@ -75,11 +75,9 @@ export default function ChamaGroupsPage() {
     rotationType: "manual",
   });
 
-  const isModerator =
-    session?.user?.role?.split(",").map((value: string) => value.trim()).includes("moderator") ??
-    false;
-  const isAdmin =
-    session?.user?.role?.split(",").map((value: string) => value.trim()).includes("admin") ?? false;
+  const appRole = (session?.user as ({ appRole?: string } | undefined))?.appRole ?? "";
+  const isModerator = appRole.split(",").map((value: string) => value.trim()).includes("moderator");
+  const isAdmin = appRole.split(",").map((value: string) => value.trim()).includes("admin");
 
   const formatCurrency = useCallback((amount: number, currency = "KES") => {
     return new Intl.NumberFormat("en-KE", {
