@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { authClient } from "@/lib/auth-client";
 import { PremiumDashboardShellLoader } from "@/components/dashboard/DashboardLoaders";
 import AdminLteShell from "@/components/dashboard/AdminLteShell";
+import ChamaNotificationMenu from "@/components/chama/ChamaNotificationMenu";
 import { LayoutDashboard, Users, CalendarCheck, ClipboardList, Wallet, Sparkles, Bell, LifeBuoy, KeyRound } from "lucide-react";
 import { PlatformFeatureProvider } from "@/lib/platform/feature-context";
 
@@ -136,10 +137,10 @@ export default function ChamaLayout({ children }: { children: React.ReactNode })
           : rolePanels.hasTreasurer
             ? [
                 ...(featureEnabled("contributions") ? [{ href: "/chama/treasurer", label: "Record contribution" }] : []),
-                ...(featureEnabled("contributions") ? [{ href: "/chama/ledger", label: "View contributions" }] : []),
               ]
-            : (featureEnabled("contributions") ? [{ href: "/chama/ledger", label: "View contributions" }] : [])
+            : []
       }
+      headerAction={<ChamaNotificationMenu enabled={featureEnabled("notifications")} />}
       user={{
         primary: session.user.name || session.user.email || "ChamaPulse user",
         secondary: isModerator ? "Moderator" : "Member",

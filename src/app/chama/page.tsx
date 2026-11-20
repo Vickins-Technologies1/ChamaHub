@@ -14,7 +14,7 @@ import {
   WalletCards,
 } from "lucide-react";
 import { authClient } from "@/lib/auth-client";
-import { fromMinorUnits, formatMinorUnits } from "@/lib/finance/money";
+import { formatMinorUnits } from "@/lib/finance/money";
 import { usePlatformFeature } from "@/lib/platform/feature-context";
 
 type DashboardSummary = {
@@ -103,7 +103,6 @@ function dueLabel(value?: string) {
 export default function ChamaDashboardPage() {
   const { data: session } = authClient.useSession();
   const canCreateGroup = usePlatformFeature("group_creation");
-  const contributionsEnabled = usePlatformFeature("contributions");
   const [summary, setSummary] = useState<DashboardSummary | null>(null);
   const [groups, setGroups] = useState<GroupSummary[]>([]);
   const [activity, setActivity] = useState<RecentActivity[]>([]);
@@ -185,7 +184,7 @@ export default function ChamaDashboardPage() {
           </div>
           <div className="flex flex-wrap items-center gap-2">
             <span className="dashboard-hero__date">{today}</span>
-            {canManageGroups && canCreateGroup ? <Link href="/chama/groups" className="dashboard-hero__action"><Plus size={16} /> Create group</Link> : contributionsEnabled ? <Link href="/chama/ledger" className="dashboard-hero__action"><WalletCards size={16} /> View contributions</Link> : null}
+            {canManageGroups && canCreateGroup ? <Link href="/chama/groups" className="dashboard-hero__action"><Plus size={16} /> Create group</Link> : null}
           </div>
         </div>
       </section>

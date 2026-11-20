@@ -35,6 +35,7 @@ type Props = {
   headerKicker: string;
   navSections: DashboardNavSection[];
   quickActions?: QuickAction[];
+  headerAction?: React.ReactNode;
   user: DashboardUser;
   onSignOut: () => void | Promise<void>;
   children: React.ReactNode;
@@ -60,6 +61,7 @@ export default function AdminLteShell({
   headerKicker,
   navSections,
   quickActions,
+  headerAction,
   user,
   onSignOut,
   children,
@@ -229,6 +231,7 @@ export default function AdminLteShell({
           </div>
 
           <div className="flex items-center gap-2 sm:gap-3">
+            {headerAction}
             {quickActions?.slice(0, 1).map((action) => (
               <Link key={action.href} href={action.href} className="dash-top-action hidden md:inline-flex">
                 {action.label}
