@@ -4,7 +4,7 @@ import ChamaGroupModel from "@/lib/models/chama-group";
 import ChamaMemberModel from "@/lib/models/chama-member";
 import ChamaRoundModel from "@/lib/models/chama-round";
 import ChamaFinancialTransactionModel from "@/lib/models/chama-financial-transaction";
-import { getAuth } from "@/lib/auth";
+import { clerkClient, getAppUserId, getClerkUserByAppId, updateAppUserRole } from "@/lib/auth";
 import { getSessionUser, isSiteAdmin } from "@/lib/chama-access";
 import { fromMinorUnits } from "@/lib/finance/money";
 import transporter from "@/lib/nodemailer";
@@ -205,20 +205,9 @@ export async function PATCH(request: Request) {
 
       const normalizedEmail = email.trim().toLowerCase();
 
-      const auth = await getAuth();
-      const context = await auth.$context;
-      const adapter = context.internalAdapter as unknown as {
-        listUsers: (
-          limit?: number,
-          offset?: number,
-          sortBy?: { field: string; direction: "asc" | "desc" }
-        ) => Promise<Array<{ id: string; email?: string | null }>>;
-      };
-      const users = await adapter.listUsers(500, 0, {
-        field: "createdAt",
-        direction: "desc",
-      });
-      const matchedUser = users.find((item) => item.email?.toLowerCase() === normalizedEmail);
+      const client = await clerkClient();
+      const users = await client.users.getUserList({ emailAddress: [normalizedEmail], limit: 1 });
+      const matchedUser = users.data[0] ?? null;
 
       const existingMember = await ChamaMemberModel.findOne({
         groupId: group._id,
@@ -226,7 +215,7 @@ export async function PATCH(request: Request) {
       });
 
       if (existingMember) {
-        existingMember.userId = matchedUser?.id ?? existingMember.userId;
+        existingMember.userId = matchedUser ? getAppUserId(matchedUser) : existingMember.userId;
         existingMember.status = "active";
         await existingMember.save();
       } else {
@@ -235,7 +224,7 @@ export async function PATCH(request: Request) {
           email: normalizedEmail,
           role: "member",
           status: "active",
-          userId: matchedUser?.id,
+          userId: matchedUser ? getAppUserId(matchedUser) : undefined,
           invitedBy: user.id,
           joinedAt: matchedUser ? new Date() : undefined,
         });
@@ -263,7 +252,6 @@ export async function PATCH(request: Request) {
 
       const baseUrl =
         process.env.NEXT_PUBLIC_SITE_URL ||
-        process.env.BETTER_AUTH_BASE_URL ||
         (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : null) ||
         "http://localhost:3000";
 
@@ -332,23 +320,9 @@ export async function PATCH(request: Request) {
         );
       }
 
-      const auth = await getAuth();
-      const context = await auth.$context;
-      const adapter = context.internalAdapter as unknown as {
-        listUsers: (
-          limit?: number,
-          offset?: number,
-          sortBy?: { field: string; direction: "asc" | "desc" }
-        ) => Promise<Array<{ id: string; email?: string | null; role?: string | null }>>;
-        updateUser: (id: string, data: { role?: string | null }) => Promise<void>;
-      };
-
-      const users = await adapter.listUsers(500, 0, {
-        field: "createdAt",
-        direction: "desc",
-      });
-      const targetUser = users.find((item) => item.id === member.userId);
-      const currentRole = targetUser?.role ?? "user";
+      const targetUser = await getClerkUserByAppId(member.userId);
+      if (!targetUser) return NextResponse.json({ error: "Linked account was not found in Clerk." }, { status: 404 });
+      const currentRole = typeof targetUser.publicMetadata.role === "string" ? targetUser.publicMetadata.role : "member";
       const roleList = currentRole
         .split(",")
         .map((value) => value.trim())
@@ -357,7 +331,9 @@ export async function PATCH(request: Request) {
         roleList.push("moderator");
       }
       const nextRole = roleList.join(",");
-      await adapter.updateUser(member.userId, { role: nextRole });
+      const client = await clerkClient();
+      await client.users.updateUser(targetUser.id, { publicMetadata: { ...targetUser.publicMetadata, role: nextRole } });
+      await updateAppUserRole(member.userId, nextRole);
 
       member.role = "admin";
       member.status = "active";
@@ -388,23 +364,9 @@ export async function PATCH(request: Request) {
         );
       }
 
-      const auth = await getAuth();
-      const context = await auth.$context;
-      const adapter = context.internalAdapter as unknown as {
-        listUsers: (
-          limit?: number,
-          offset?: number,
-          sortBy?: { field: string; direction: "asc" | "desc" }
-        ) => Promise<Array<{ id: string; email?: string | null; role?: string | null }>>;
-        updateUser: (id: string, data: { role?: string | null }) => Promise<void>;
-      };
-
-      const users = await adapter.listUsers(500, 0, {
-        field: "createdAt",
-        direction: "desc",
-      });
-      const targetUser = users.find((item) => item.id === member.userId);
-      const currentRole = targetUser?.role ?? "user";
+      const targetUser = await getClerkUserByAppId(member.userId);
+      if (!targetUser) return NextResponse.json({ error: "Linked account was not found in Clerk." }, { status: 404 });
+      const currentRole = typeof targetUser.publicMetadata.role === "string" ? targetUser.publicMetadata.role : "member";
       const roleList = currentRole
         .split(",")
         .map((value) => value.trim())
@@ -413,7 +375,9 @@ export async function PATCH(request: Request) {
         roleList.push("member");
       }
       const nextRole = roleList.join(",");
-      await adapter.updateUser(member.userId, { role: nextRole });
+      const client = await clerkClient();
+      await client.users.updateUser(targetUser.id, { publicMetadata: { ...targetUser.publicMetadata, role: nextRole } });
+      await updateAppUserRole(member.userId, nextRole);
 
       member.role = "member";
       await member.save();

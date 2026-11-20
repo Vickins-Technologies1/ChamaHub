@@ -4,12 +4,14 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { authClient } from "@/lib/auth-client";
+import { useClerk } from "@clerk/nextjs";
 import { PremiumDashboardShellLoader } from "@/components/dashboard/DashboardLoaders";
 import AdminLteShell from "@/components/dashboard/AdminLteShell";
 import { LayoutDashboard, Users, CalendarCheck, ClipboardList, Wallet, Sparkles } from "lucide-react";
 
 export default function ChamaLayout({ children }: { children: React.ReactNode }) {
   const { data: session, isPending } = authClient.useSession();
+  const { signOut } = useClerk();
   const router = useRouter();
   const [rolePanels, setRolePanels] = useState({
     hasGroupAdmin: false,
@@ -97,7 +99,7 @@ export default function ChamaLayout({ children }: { children: React.ReactNode })
   ];
 
   const handleSignOut = async () => {
-    await authClient.signOut();
+    await signOut();
     const role = session.user.role ?? "";
     const moderator = role.split(",").map((value) => value.trim()).includes("moderator");
     router.replace(moderator ? "/moderator-login" : "/member-login");

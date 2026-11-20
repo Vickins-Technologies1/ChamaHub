@@ -7,7 +7,7 @@ Production website: https://chamapulse.vickinstechnologies.com/
 ## Stack
 
 - Next.js App Router with TypeScript
-- Better Auth with MongoDB
+- Clerk for managed authentication and password recovery
 - Mongoose models for chama data
 - Nodemailer for email, optional Twilio SMS, and Google Meet attendance sync
 
@@ -20,7 +20,17 @@ Production website: https://chamapulse.vickinstechnologies.com/
 
 ## Data and accounts
 
-Set `MONGODB_URI` to the MongoDB cluster that contains existing group data. The default database name is `Viuckins101`; retain it to keep existing groups and accounts available. Keep the existing `CHAMAHUB_MONGODB_DB` variable name for compatibility. Use a unique `BETTER_AUTH_SECRET`; set `BETTER_AUTH_BASE_URL` and `NEXT_PUBLIC_SITE_URL` to `https://chamapulse.vickinstechnologies.com` in the production deployment. Local development continues to use `http://localhost:3000`.
+Set `MONGODB_URI` to the MongoDB cluster that contains existing group data. The default database name is `Viuckins101`; retain it to keep existing groups and account profiles available. Keep the existing `CHAMAHUB_MONGODB_DB` variable name for compatibility. Configure `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY` and `CLERK_SECRET_KEY` from the Clerk instance, and set `NEXT_PUBLIC_SITE_URL` to `https://chamapulse.vickinstechnologies.com` in production. Local development uses `http://localhost:3000`.
+
+### Authentication migration
+
+Clerk owns sign-in, email verification, and password recovery. Configure email/password sign-in and email verification in the Clerk Dashboard, then set the Clerk keys in the deployment environment. Existing Better Auth password hashes use a format Clerk cannot import. Before deploying the provider switch, back up MongoDB and run the one-time account import with production Clerk and MongoDB credentials:
+
+```powershell
+pnpm auth:migrate-clerk
+```
+
+The import preserves each legacy account ID as the Clerk external ID so group membership, ownership, and financial audit records keep their existing references. It assigns every legacy account an unknown random password; each existing user must choose a new password using **Forgot password** after cutover. The import is safe to rerun: it updates users by external ID or matching email rather than creating duplicates. Do not deploy the Clerk cutover until the import completes and the Clerk email/password recovery settings and production keys are in place.
 
 ## Notifications and attendance
 

@@ -1,6 +1,6 @@
-import { headers } from "next/headers";
 import { Types } from "mongoose";
-import { getAuth } from "@/lib/auth";
+import { auth } from "@clerk/nextjs/server";
+import connectToDatabase from "@/lib/mongodb";
 import ChamaMemberModel from "@/lib/models/chama-member";
 import { connectMongoose } from "@/lib/mongoose";
 
@@ -12,13 +12,18 @@ export type SessionUser = {
 };
 
 export const getSessionUser = async () => {
-  const auth = await getAuth();
-  const session = await auth.api.getSession({
-    headers: await headers(),
-  });
-  const user = session && typeof session === "object" && "user" in session ? session.user : null;
+  const { userId } = await auth();
+  if (!userId) return null;
+  const db = await connectToDatabase();
+  const user = await db.collection("user").findOne({ clerkId: userId });
   if (!user) return null;
-  return user as SessionUser;
+  const role = user.role;
+  return {
+    id: String(user.id),
+    email: typeof user.email === "string" ? user.email : null,
+    name: typeof user.name === "string" ? user.name : null,
+    role: typeof role === "string" ? role : "member",
+  } satisfies SessionUser;
 };
 
 export const isSiteAdmin = (user: SessionUser | null) => {

@@ -1,53 +1,25 @@
 import { NextResponse } from "next/server";
-import { getAuth } from "@/lib/auth";
+import { auth, currentUser } from "@clerk/nextjs/server";
+import { clerkClient, syncAppUser } from "@/lib/auth";
 import { linkMemberToUser } from "@/lib/chama-access";
 
-export async function POST(request: Request) {
-  const body = await request.json().catch(() => ({}));
-  const { email, password, name } = body as {
-    email?: string;
-    password?: string;
-    name?: string;
-  };
+export async function POST() {
+  const { userId } = await auth();
+  if (!userId) return NextResponse.json({ error: "Sign in to finish creating your account." }, { status: 401 });
+  const user = await currentUser();
+  if (!user) return NextResponse.json({ error: "Your Clerk account could not be loaded." }, { status: 401 });
 
-  if (!email || !password || !name) {
-    return NextResponse.json(
-      { error: "Name, email, and password are required." },
-      { status: 400 }
-    );
+  const existingRole = typeof user.publicMetadata.role === "string" ? user.publicMetadata.role : "member";
+  if (existingRole.split(",").map((role) => role.trim()).some((role) => ["admin", "moderator"].includes(role))) {
+    return NextResponse.json({ error: "This account already has moderator access." }, { status: 409 });
   }
 
-  try {
-    const auth = await getAuth();
-    const result = await auth.api.signUpEmail({
-      body: {
-        email: email.trim().toLowerCase(),
-        password,
-        name,
-      },
-    });
+  const client = await clerkClient();
+  await client.users.updateUser(user.id, {
+    publicMetadata: { ...user.publicMetadata, role: "member" },
+  });
 
-    const createdUser =
-      result && typeof result === "object" && "user" in result ? result.user : result;
-
-    const context = await auth.$context;
-    await context.internalAdapter.updateUser(createdUser.id, {
-      role: "member",
-    });
-
-    await linkMemberToUser({
-      id: createdUser.id,
-      email: createdUser.email,
-      name: createdUser.name,
-      role: "member",
-    });
-
-    return NextResponse.json({
-      user: { ...createdUser, role: "member" },
-      requiresEmailVerification: Boolean(process.env.EMAIL_USER && process.env.EMAIL_PASS),
-    });
-  } catch (error) {
-    const message = error instanceof Error ? error.message : "Failed to create member user.";
-    return NextResponse.json({ error: message }, { status: 400 });
-  }
+  const member = await syncAppUser(user, "member");
+  await linkMemberToUser(member);
+  return NextResponse.json({ user: member });
 }

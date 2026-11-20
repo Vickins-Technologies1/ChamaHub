@@ -1,155 +1,20 @@
-// src/app/member-signup/page.tsx
 "use client";
 
-import { useState, Suspense } from "react";
-import Link from "next/link";
-import { useRouter, useSearchParams } from "next/navigation";
-import { ArrowRight, Eye, EyeOff } from "lucide-react";
-import { authClient } from "@/lib/auth-client";
+import { SignUp } from "@clerk/nextjs";
+import { Suspense } from "react";
+import { useSearchParams } from "next/navigation";
 import AuthShell from "@/components/AuthShell";
 
-const inputClass =
-  "glass-input";
-
 function MemberSignupContent() {
-  const searchParams = useSearchParams();
-  const router = useRouter();
-  const prefillEmail = searchParams.get("email") ?? "";
-  const groupName = searchParams.get("groupName");
-
-  const [form, setForm] = useState({
-    name: "",
-    email: prefillEmail,
-    password: "",
-  });
-  const [status, setStatus] = useState<"idle" | "loading" | "success" | "error">("idle");
-  const [message, setMessage] = useState("");
-  const [showPassword, setShowPassword] = useState(false);
-
-  const handleSubmit = async (event: React.FormEvent) => {
-    event.preventDefault();
-    setStatus("loading");
-    setMessage("");
-
-    try {
-      const response = await fetch("/api/chama/member-signup", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          ...form,
-          email: form.email.trim().toLowerCase(),
-        }),
-      });
-
-      const data = await response.json();
-      if (!response.ok) {
-        throw new Error(data?.error ?? "Failed to create member account.");
-      }
-
-      if (data?.requiresEmailVerification) {
-        setStatus("success");
-        setMessage("Check your email to verify your account, then sign in to join your group.");
-        return;
-      }
-
-      const { error } = await authClient.signIn.email({
-        email: form.email.trim().toLowerCase(),
-        password: form.password,
-      });
-      if (error) {
-        throw new Error("Account created, but sign-in failed. Please log in.");
-      }
-
-      setStatus("success");
-      setMessage("Member account created. Redirecting...");
-      router.replace("/chama");
-      router.refresh();
-    } catch (error) {
-      setStatus("error");
-      setMessage(error instanceof Error ? error.message : "Something went wrong.");
-    }
-  };
-
-  return (
-    <AuthShell
-      eyebrow="Member Signup"
-      title="Create your ChamaPulse member profile."
-      subtitle="Use the same email you received your group invite with to automatically link to your chama."
-      brandTitle="Member Access"
-      brandSubtitle="Join your savings circle with confidence."
-      brandPoints={[
-        "See upcoming dues and payout timelines.",
-        "Track your savings progress in real time.",
-        "Secure onboarding built for member privacy.",
-      ]}
-    >
-      {groupName && (
-        <div className="rounded-2xl border border-[var(--glass-border)] bg-white/60 px-4 py-3 text-sm text-[var(--foreground)]">
-          You are joining <span className="font-semibold">{groupName}</span>.
-        </div>
-      )}
-
-      <form onSubmit={handleSubmit} className="mt-6 space-y-4">
-        <input
-          className={inputClass}
-          placeholder="Full name"
-          value={form.name}
-          onChange={(event) => setForm((prev) => ({ ...prev, name: event.target.value }))}
-          required
-        />
-        <input
-          className={inputClass}
-          type="email"
-          placeholder="Email address"
-          value={form.email}
-          onChange={(event) => setForm((prev) => ({ ...prev, email: event.target.value }))}
-          required
-        />
-        <div className="relative"><input className={`${inputClass} pr-12`} type={showPassword ? "text" : "password"} placeholder="Password (at least 8 characters)" value={form.password} onChange={(event) => setForm((prev) => ({ ...prev, password: event.target.value }))} minLength={8} required /><button type="button" aria-label={showPassword ? "Hide password" : "Show password"} onClick={() => setShowPassword((value) => !value)} className="absolute right-3 top-1/2 -translate-y-1/2 text-[var(--muted)]">{showPassword ? <EyeOff size={18} /> : <Eye size={18} />}</button></div>
-        <button
-          type="submit"
-          disabled={status === "loading"}
-          className="w-full inline-flex items-center justify-center gap-2 px-5 py-3 rounded-full bg-[var(--button-bg)] text-white text-sm font-semibold disabled:opacity-70"
-        >
-          {status === "loading" ? "Creating account..." : "Create member account"}
-          <ArrowRight size={16} />
-        </button>
-      </form>
-
-      {message && (
-        <div
-          className={`mt-4 rounded-2xl px-4 py-3 text-sm ${
-            status === "success"
-              ? "bg-emerald-500/10 text-emerald-600"
-              : "bg-rose-500/10 text-rose-500"
-          }`}
-        >
-          {message}
-        </div>
-      )}
-
-      <div className="mt-6 text-sm text-[var(--muted)]">
-        Already a member?{" "}
-        <Link href="/member-login" className="text-[var(--button-bg)] font-semibold hover:underline">
-          Log in
-        </Link>
-      </div>
-    </AuthShell>
-  );
+  const params = useSearchParams();
+  const groupName = params.get("groupName");
+  const email = params.get("email") ?? undefined;
+  return <AuthShell eyebrow="Member Signup" title="Create your ChamaPulse member profile." subtitle="Use the email address your group invited so we can link your account to your membership." brandTitle="Member Access" brandSubtitle="Join your savings circle with confidence." brandPoints={["See upcoming dues and payout timelines.", "Track your savings progress in real time.", "Secure onboarding built for member privacy."]}>
+    {groupName && <div className="mb-5 rounded-2xl border border-[var(--glass-border)] bg-white/60 px-4 py-3 text-sm">You are joining <strong>{groupName}</strong>.</div>}
+    <div className="flex justify-center"><SignUp routing="hash" initialValues={{ emailAddress: email }} forceRedirectUrl="/auth/complete-signup?role=member" signInForceRedirectUrl="/auth/continue?role=member" signInUrl="/member-login" unsafeMetadata={{ requestedRole: "member" }} /></div>
+  </AuthShell>;
 }
 
 export default function MemberSignupPage() {
-  return (
-    <Suspense
-      fallback={
-        <div className="min-h-screen flex items-center justify-center px-4">
-          <div className="glass-panel w-full max-w-md p-6 sm:p-8 text-center">
-            Loading member signup...
-          </div>
-        </div>
-      }
-    >
-      <MemberSignupContent />
-    </Suspense>
-  );
+  return <Suspense fallback={<div className="min-h-screen" />}><MemberSignupContent /></Suspense>;
 }

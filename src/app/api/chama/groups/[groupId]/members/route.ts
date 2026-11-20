@@ -166,7 +166,6 @@ export async function POST(request: NextRequest, { params }: Params) {
           | null;
         const baseUrl =
           process.env.NEXT_PUBLIC_SITE_URL ||
-          process.env.BETTER_AUTH_BASE_URL ||
           (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : null) ||
           "http://localhost:3000";
         const inviteLink = `${baseUrl}/member-signup?email=${encodeURIComponent(

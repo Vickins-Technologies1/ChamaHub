@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { ClerkProvider } from "@clerk/nextjs";
 import { Inter, Instrument_Sans, Space_Grotesk } from "next/font/google";
 import ThemePreloaderProvider from "@/components/ThemePreloaderProvider";
 import "./globals.css";
@@ -41,7 +42,9 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
   return (
     <html lang="en" suppressHydrationWarning>
       <body className={`${inter.variable} ${instrument.variable} ${display.variable}`}>
-        <ThemePreloaderProvider>{children}</ThemePreloaderProvider>
+        <ClerkProvider>
+          <ThemePreloaderProvider>{children}</ThemePreloaderProvider>
+        </ClerkProvider>
       </body>
     </html>
   );
