@@ -727,6 +727,20 @@ h4 {
   box-shadow: var(--glass-shadow-strong);
 }
 
+.dash-notification-menu {
+  position: absolute;
+  z-index: 30;
+  top: calc(100% + 10px);
+  right: 0;
+  width: min(360px, calc(100vw - 24px));
+  overflow: hidden;
+  border: 1px solid var(--dash-border);
+  border-radius: 13px;
+  background: var(--dash-card-bg);
+  color: var(--foreground);
+  box-shadow: var(--glass-shadow-strong);
+}
+
 .dash-user-menu__identity { padding: 14px 16px; border-bottom: 1px solid var(--dash-border); }
 .dash-user-menu__action { display: flex; width: 100%; align-items: center; gap: 9px; padding: 12px 16px; color: var(--foreground); text-align: left; font-size: 13px; font-weight: 600; }
 .dash-user-menu__action:hover { background: var(--dash-sidebar-hover); color: var(--accent); }

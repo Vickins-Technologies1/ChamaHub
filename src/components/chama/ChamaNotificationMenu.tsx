@@ -27,9 +27,8 @@ export default function ChamaNotificationMenu({ enabled }: { enabled: boolean })
   const [error, setError] = useState("");
   const [open, setOpen] = useState(false);
   const [markingReadId, setMarkingReadId] = useState<string | null>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
-  const closeRef = useRef<HTMLButtonElement>(null);
-  const dialogRef = useRef<HTMLElement>(null);
 
   const loadNotifications = useCallback(async () => {
     setLoading(true);
@@ -53,30 +52,21 @@ export default function ChamaNotificationMenu({ enabled }: { enabled: boolean })
 
   useEffect(() => {
     if (!open) return;
-    closeRef.current?.focus();
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.key === "Escape") {
         setOpen(false);
         triggerRef.current?.focus();
-        return;
-      }
-      if (event.key === "Tab" && dialogRef.current) {
-        const focusable = dialogRef.current.querySelectorAll<HTMLElement>(
-          'button:not(:disabled), a[href], [tabindex]:not([tabindex="-1"])'
-        );
-        const first = focusable[0];
-        const last = focusable[focusable.length - 1];
-        if (event.shiftKey && document.activeElement === first) {
-          event.preventDefault();
-          last?.focus();
-        } else if (!event.shiftKey && document.activeElement === last) {
-          event.preventDefault();
-          first?.focus();
-        }
       }
     };
+    const handlePointerDown = (event: PointerEvent) => {
+      if (menuRef.current && !menuRef.current.contains(event.target as Node)) setOpen(false);
+    };
     document.addEventListener("keydown", handleKeyDown);
-    return () => document.removeEventListener("keydown", handleKeyDown);
+    document.addEventListener("pointerdown", handlePointerDown);
+    return () => {
+      document.removeEventListener("keydown", handleKeyDown);
+      document.removeEventListener("pointerdown", handlePointerDown);
+    };
   }, [open]);
 
   const markRead = async (id: string) => {
@@ -102,16 +92,21 @@ export default function ChamaNotificationMenu({ enabled }: { enabled: boolean })
   if (!enabled) return null;
 
   return (
-    <>
+    <div ref={menuRef} className="relative shrink-0">
       <button
         ref={triggerRef}
         type="button"
         onClick={() => {
+          if (open) {
+            setOpen(false);
+            return;
+          }
           setOpen(true);
           if (!loading) void loadNotifications();
         }}
         aria-label={`Notifications${unread ? `, ${unread} unread` : ""}`}
         aria-haspopup="dialog"
+        aria-controls="chama-notifications-menu"
         aria-expanded={open}
         className="relative inline-flex size-10 shrink-0 items-center justify-center rounded-lg border border-[var(--dash-border)] bg-[var(--dash-card-bg)] text-[var(--foreground)] transition hover:bg-[var(--dash-sidebar-hover)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--button-bg)]"
       >
@@ -124,63 +119,52 @@ export default function ChamaNotificationMenu({ enabled }: { enabled: boolean })
       </button>
 
       {open ? (
-        <div
-          className="fixed inset-0 z-[100] flex items-start justify-center bg-slate-950/35 px-4 pt-24 sm:pt-28"
-          onMouseDown={(event) => {
-            if (event.target === event.currentTarget) {
-              setOpen(false);
-              triggerRef.current?.focus();
-            }
-          }}
+        <section
+          id="chama-notifications-menu"
+          role="dialog"
+          aria-labelledby="chama-notifications-title"
+          className="dash-notification-menu"
         >
-          <section
-            ref={dialogRef}
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby="chama-notifications-title"
-            className="w-full max-w-md overflow-hidden rounded-2xl border border-[var(--glass-border)] bg-[var(--dash-card-bg)] text-[var(--foreground)] shadow-2xl"
-          >
-            <header className="flex items-center justify-between border-b border-[var(--glass-border)] px-4 py-3">
-              <div>
-                <h2 id="chama-notifications-title" className="font-semibold">Notifications</h2>
-                <p className="mt-0.5 text-xs text-[var(--muted)]">{unread} unread</p>
-              </div>
-              <button ref={closeRef} type="button" onClick={() => { setOpen(false); triggerRef.current?.focus(); }} className="rounded-md px-2 py-1 text-xs font-semibold text-[var(--muted)] hover:bg-[var(--dash-sidebar-hover)]" aria-label="Close notifications">Close</button>
-            </header>
-            {error ? <p role="alert" className="mx-4 mt-3 rounded-lg bg-rose-50 p-2 text-xs text-rose-700">{error}</p> : null}
-            <div className="max-h-[min(60vh,24rem)] overflow-y-auto divide-y divide-[var(--glass-border)]">
-              {loading ? <p className="p-6 text-center text-sm text-[var(--muted)]">Loading notifications…</p> : null}
-              {!loading && notifications.length === 0 ? <p className="p-6 text-center text-sm text-[var(--muted)]">You’re all caught up.</p> : null}
-              {notifications.map((item) => (
-                <article key={item.id} className={`px-4 py-3 ${item.readAt ? "" : "bg-blue-50/60 dark:bg-blue-950/30"}`}>
-                  <div className="flex items-start gap-3">
-                    <span className={`mt-1.5 size-2 shrink-0 rounded-full ${item.readAt ? "bg-slate-200" : "bg-blue-600"}`} aria-hidden="true" />
-                    <div className="min-w-0 flex-1">
-                      <p className="text-sm font-semibold">{item.title}</p>
-                      <p className="mt-1 whitespace-pre-wrap text-xs leading-relaxed text-[var(--muted)]">{item.message}</p>
-                      <p className="mt-2 text-[10px] text-[var(--muted)]">{formatNotificationDate(item.createdAt)}</p>
-                    </div>
-                    {!item.readAt ? (
-                      <button
-                        type="button"
-                        onClick={() => void markRead(item.id)}
-                        disabled={markingReadId === item.id}
-                        className="inline-flex shrink-0 items-center gap-1 rounded-md px-2 py-1 text-[10px] font-semibold text-[var(--button-bg)] hover:bg-blue-100 disabled:opacity-50 dark:hover:bg-blue-950"
-                      >
-                        <CheckCheck size={13} /> {markingReadId === item.id ? "Saving" : "Read"}
-                      </button>
-                    ) : null}
-                  </div>
-                </article>
-              ))}
+          <header className="flex items-center justify-between border-b border-[var(--glass-border)] px-4 py-3">
+            <div>
+              <h2 id="chama-notifications-title" className="font-semibold">Notifications</h2>
+              <p className="mt-0.5 text-xs text-[var(--muted)]">{unread} unread</p>
             </div>
-            <footer className="border-t border-[var(--glass-border)] px-4 py-3 text-right">
-              <Link href="/chama/notifications" onClick={() => setOpen(false)} className="text-xs font-semibold text-[var(--button-bg)] hover:underline">View all notifications</Link>
-            </footer>
-          </section>
-        </div>
+            <button type="button" onClick={() => { setOpen(false); triggerRef.current?.focus(); }} className="rounded-md px-2 py-1 text-xs font-semibold text-[var(--muted)] hover:bg-[var(--dash-sidebar-hover)]" aria-label="Close notifications">Close</button>
+          </header>
+          {error ? <p role="alert" className="mx-4 mt-3 rounded-lg bg-rose-50 p-2 text-xs text-rose-700">{error}</p> : null}
+          <div className="max-h-[min(60vh,24rem)] overflow-y-auto divide-y divide-[var(--glass-border)]">
+            {loading ? <p className="p-6 text-center text-sm text-[var(--muted)]">Loading notifications…</p> : null}
+            {!loading && notifications.length === 0 ? <p className="p-6 text-center text-sm text-[var(--muted)]">You’re all caught up.</p> : null}
+            {notifications.map((item) => (
+              <article key={item.id} className={`px-4 py-3 ${item.readAt ? "" : "bg-blue-50/60 dark:bg-blue-950/30"}`}>
+                <div className="flex items-start gap-3">
+                  <span className={`mt-1.5 size-2 shrink-0 rounded-full ${item.readAt ? "bg-slate-200" : "bg-blue-600"}`} aria-hidden="true" />
+                  <div className="min-w-0 flex-1">
+                    <p className="text-sm font-semibold">{item.title}</p>
+                    <p className="mt-1 whitespace-pre-wrap text-xs leading-relaxed text-[var(--muted)]">{item.message}</p>
+                    <p className="mt-2 text-[10px] text-[var(--muted)]">{formatNotificationDate(item.createdAt)}</p>
+                  </div>
+                  {!item.readAt ? (
+                    <button
+                      type="button"
+                      onClick={() => void markRead(item.id)}
+                      disabled={markingReadId === item.id}
+                      className="inline-flex shrink-0 items-center gap-1 rounded-md px-2 py-1 text-[10px] font-semibold text-[var(--button-bg)] hover:bg-blue-100 disabled:opacity-50 dark:hover:bg-blue-950"
+                    >
+                      <CheckCheck size={13} /> {markingReadId === item.id ? "Saving" : "Read"}
+                    </button>
+                  ) : null}
+                </div>
+              </article>
+            ))}
+          </div>
+          <footer className="border-t border-[var(--glass-border)] px-4 py-3 text-right">
+            <Link href="/chama/notifications" onClick={() => setOpen(false)} className="text-xs font-semibold text-[var(--button-bg)] hover:underline">View all notifications</Link>
+          </footer>
+        </section>
       ) : null}
-    </>
+    </div>
   );
 }
 

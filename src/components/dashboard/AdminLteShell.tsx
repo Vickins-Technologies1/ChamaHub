@@ -231,7 +231,6 @@ export default function AdminLteShell({
           </div>
 
           <div className="flex items-center gap-2 sm:gap-3">
-            {headerAction}
             {quickActions?.slice(0, 1).map((action) => (
               <Link key={action.href} href={action.href} className="dash-top-action hidden md:inline-flex">
                 {action.label}
@@ -277,6 +276,7 @@ export default function AdminLteShell({
                 </>
               ) : null}
             </div>
+            {headerAction}
           </div>
         </header>
 
