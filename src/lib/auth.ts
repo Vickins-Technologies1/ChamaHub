@@ -22,9 +22,11 @@ export async function syncAppUser(user: {
   };
   if (role) update.role = role;
   else if (typeof user.appRole === "string") update.role = user.appRole;
+  const setOnInsert: Record<string, unknown> = { id, createdAt: new Date() };
+  if (typeof update.role !== "string") setOnInsert.role = "member";
   await db.collection("user").updateOne(
     { id },
-    { $set: update, $setOnInsert: { id, role: role ?? user.appRole ?? "member", createdAt: new Date() } },
+    { $set: update, $setOnInsert: setOnInsert },
     { upsert: true },
   );
   if (role) {

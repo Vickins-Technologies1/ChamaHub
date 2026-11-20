@@ -13,7 +13,9 @@ function ContinueContent() {
   const callback = params.get("callbackUrl") ?? "/chama";
   const rawRole = (session?.user as ({ appRole?: string } | undefined))?.appRole ?? "member";
   const roles = rawRole.split(",").map((role) => role.trim());
-  const authorized = requestedRole === "moderator" ? roles.includes("moderator") || roles.includes("admin") : roles.includes("member") || roles.includes("user");
+  const verifiedSignupContinuation = callback === "/auth/complete-signup" || callback.startsWith("/auth/complete-signup?");
+  const emailVerified = (session?.user as ({ emailVerified?: boolean } | undefined))?.emailVerified === true;
+  const authorized = (verifiedSignupContinuation && emailVerified) || (requestedRole === "moderator" ? roles.includes("moderator") || roles.includes("admin") : roles.includes("member") || roles.includes("user"));
 
   useEffect(() => {
     if (isPending || handled.current) return;

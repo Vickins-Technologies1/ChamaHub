@@ -18,11 +18,15 @@ export default function ModeratorSignupPage() {
 
   const submit = (event: React.FormEvent) => {
     event.preventDefault();
-    if (!form.groupName.trim() || Number(form.contributionAmount) <= 0 || !form.startDate) {
-      setError("Enter a group name, a contribution amount above zero, and a start date.");
+    if (!form.groupName.trim() || Number(form.contributionAmount) < 1 || !form.startDate) {
+      setError("Enter a group name, a contribution amount of at least 1, and a start date.");
       return;
     }
-    sessionStorage.setItem("chamapulse-pending-moderator-signup", JSON.stringify(form));
+    try {
+      localStorage.setItem("chamapulse-pending-moderator-signup", JSON.stringify(form));
+    } catch {
+      // The completion page can ask for these details again if browser storage is unavailable.
+    }
     router.push("/auth/enroll?role=moderator");
   };
 
@@ -31,7 +35,7 @@ export default function ModeratorSignupPage() {
       <input className={inputClass} placeholder="Chama group name" value={form.groupName} onChange={(e) => setForm({ ...form, groupName: e.target.value })} required />
       <input className={inputClass} placeholder="Group description (optional)" value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} />
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-        <input className={inputClass} type="number" min="0.01" step="0.01" placeholder="Contribution amount" value={form.contributionAmount} onChange={(e) => setForm({ ...form, contributionAmount: e.target.value })} required />
+        <input className={inputClass} type="number" min="1" step="0.01" placeholder="Contribution amount" value={form.contributionAmount} onChange={(e) => setForm({ ...form, contributionAmount: e.target.value })} required />
         <select className={inputClass} value={form.frequency} onChange={(e) => setForm({ ...form, frequency: e.target.value })}><option value="weekly">Weekly</option><option value="bi-weekly">Bi-weekly</option><option value="monthly">Monthly</option></select>
         <input className={inputClass} type="number" min="1" placeholder="Expected members" value={form.numberOfMembers} onChange={(e) => setForm({ ...form, numberOfMembers: e.target.value })} />
         <input className={inputClass} type="date" value={form.startDate} onChange={(e) => setForm({ ...form, startDate: e.target.value })} required />

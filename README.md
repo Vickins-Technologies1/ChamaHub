@@ -79,7 +79,7 @@ The admin console intentionally does not create or alter financial balances. Con
 
 ## Notifications and attendance
 
-Email notifications use `EMAIL_USER` and `EMAIL_PASS`. SMS is optional and uses the Twilio variables in `.env.example`. Google Meet attendance sync uses the Google OAuth variables there. Protect the scheduled notification endpoint with `JOBS_TOKEN` and schedule it to call `/api/jobs/chama-call-notifications`.
+Email notifications use `EMAIL_USER` and `EMAIL_PASS` with Gmail by default. To use another SMTP relay, set `EMAIL_HOST`, `EMAIL_PORT`, and `EMAIL_SECURE`; credentials are sent when both email credential values are present. SMS is optional and uses the Twilio variables in `.env.example`. Google Meet attendance sync uses the Google OAuth variables there. Protect the scheduled notification endpoint with `JOBS_TOKEN` and schedule it to call `/api/jobs/chama-call-notifications`.
 
 The application needs a Node.js server because its API routes handle authentication, database access, notifications, and attendance sync.
 
