@@ -1,5 +1,3 @@
-import AdminWorkspaceLayout from "@/components/dashboard/AdminWorkspaceLayout";
-
-export default function Layout({ children }: { children: React.ReactNode }) {
-  return <AdminWorkspaceLayout>{children}</AdminWorkspaceLayout>;
+export default function LegacyAdminLayout({ children }: { children: React.ReactNode }) {
+  return children;
 }

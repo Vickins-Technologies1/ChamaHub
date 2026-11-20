@@ -129,7 +129,7 @@ export default function ChamaLayout({ children }: { children: React.ReactNode })
             : [{ href: "/chama/ledger", label: "View contributions" }]
       }
       user={{
-        primary: session.user.name || session.user.email,
+        primary: session.user.name || session.user.email || "ChamaPulse user",
         secondary: isModerator ? "Moderator" : "Member",
       }}
       onSignOut={handleSignOut}

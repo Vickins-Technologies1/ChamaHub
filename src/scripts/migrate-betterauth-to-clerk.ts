@@ -52,8 +52,8 @@ async function main() {
     const clerkUser = existing
       ? await clerk.users.updateUser(existing.id, {
         externalId: legacy.id,
-        firstName: firstName ?? existing.firstName,
-        lastName: lastName ?? existing.lastName,
+        firstName: firstName ?? existing.firstName ?? undefined,
+        lastName: lastName ?? existing.lastName ?? undefined,
         ...(alreadyMigrated ? {} : { password: randomPassword }),
         publicMetadata,
         privateMetadata,

@@ -12,7 +12,8 @@
     "test:watch": "vitest",
     "test:ci": "vitest run",
     "finance:migrate": "tsx src/scripts/migrate-financial-ledger.ts",
-    "auth:migrate-clerk": "tsx src/scripts/migrate-betterauth-to-clerk.ts"
+    "auth:migrate-clerk": "tsx src/scripts/migrate-betterauth-to-clerk.ts",
+    "admin:bootstrap": "tsx src/scripts/bootstrap-super-admin.ts"
   },
   "dependencies": {
     "@clerk/nextjs": "^7.9.26",

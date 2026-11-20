@@ -5,19 +5,20 @@ import ChamaMemberModel from "@/lib/models/chama-member";
 import ChamaRoundModel from "@/lib/models/chama-round";
 import ChamaFinancialTransactionModel from "@/lib/models/chama-financial-transaction";
 import { clerkClient, getAppUserId, getClerkUserByAppId, updateAppUserRole } from "@/lib/auth";
-import { getSessionUser, isSiteAdmin } from "@/lib/chama-access";
+import {
+  checkSameOrigin,
+  enforceAdminRateLimit,
+  isSuperAdmin,
+  requireAdminPermission,
+  writeAdminAudit,
+} from "@/lib/admin/access";
 import { fromMinorUnits } from "@/lib/finance/money";
 import transporter from "@/lib/nodemailer";
 
 export async function GET() {
   try {
-    const user = await getSessionUser();
-    if (!user) {
-      return NextResponse.json({ error: "Unauthorized." }, { status: 401 });
-    }
-    if (!isSiteAdmin(user)) {
-      return NextResponse.json({ error: "Access denied." }, { status: 403 });
-    }
+    const access = await requireAdminPermission("groups.read");
+    if (access.response) return access.response;
 
     await connectMongoose();
 
@@ -154,6 +155,12 @@ export async function GET() {
 }
 
 export async function PATCH(request: Request) {
+  const originError = checkSameOrigin(request);
+  if (originError) return originError;
+  const access = await requireAdminPermission("groups.write");
+  if (access.response) return access.response;
+  const limited = await enforceAdminRateLimit({ userId: access.session.user.id, request, action: "legacy-group-admin", limit: 20 });
+  if (limited) return limited;
   const body = await request.json().catch(() => ({}));
   const { action, groupId, memberId, email } = body as {
     action?:
@@ -177,13 +184,7 @@ export async function PATCH(request: Request) {
   }
 
   try {
-    const user = await getSessionUser();
-    if (!user) {
-      return NextResponse.json({ error: "Unauthorized." }, { status: 401 });
-    }
-    if (!isSiteAdmin(user)) {
-      return NextResponse.json({ error: "Access denied." }, { status: 403 });
-    }
+    const user = access.session.user;
 
     await connectMongoose();
 
@@ -193,8 +194,10 @@ export async function PATCH(request: Request) {
     }
 
     if (action === "archive" || action === "activate") {
+      const previousStatus = group.status;
       group.status = action === "archive" ? "archived" : "active";
       await group.save();
+      await writeAdminAudit({ actor: access.session, action: `group.${action === "archive" ? "archived" : "activated"}`, entityType: "group", entityId: String(group._id), request, before: { status: previousStatus }, after: { status: group.status } });
       return NextResponse.json({ ok: true });
     }
 
@@ -238,6 +241,8 @@ export async function PATCH(request: Request) {
         { _id: group._id },
         { $set: { numberOfMembers: activeCount } }
       );
+
+      await writeAdminAudit({ actor: access.session, action: "group.member.force_joined", entityType: "group", entityId: String(group._id), request, metadata: { email: normalizedEmail, memberId: existingMember ? String(existingMember._id) : null } });
 
       return NextResponse.json({ ok: true });
     }
@@ -294,6 +299,7 @@ export async function PATCH(request: Request) {
       );
 
       const sentCount = sendResults.filter(Boolean).length;
+      await writeAdminAudit({ actor: access.session, action: "group.invite_reminders.sent", entityType: "group", entityId: String(group._id), request, metadata: { sentCount, attemptedCount: members.length } });
       return NextResponse.json({
         ok: true,
         message: `Sent ${sentCount} reminder${sentCount === 1 ? "" : "s"}.`,
@@ -301,6 +307,7 @@ export async function PATCH(request: Request) {
     }
 
     if (action === "make-moderator") {
+      if (!isSuperAdmin(access.session.grant)) return NextResponse.json({ error: "Only a Super Admin can grant moderator access." }, { status: 403 });
       if (!memberId) {
         return NextResponse.json(
           { error: "memberId is required to promote a moderator." },
@@ -341,10 +348,13 @@ export async function PATCH(request: Request) {
       group.createdBy = member.userId;
       await group.save();
 
+      await writeAdminAudit({ actor: access.session, action: "group.moderator.promoted", entityType: "group", entityId: String(group._id), request, before: { userId: member.userId, platformRole: currentRole, groupRole: "member" }, after: { userId: member.userId, platformRole: nextRole, groupRole: member.role } });
+
       return NextResponse.json({ ok: true });
     }
 
     if (action === "revoke-moderator") {
+      if (!isSuperAdmin(access.session.grant)) return NextResponse.json({ error: "Only a Super Admin can revoke moderator access." }, { status: 403 });
       if (!memberId) {
         return NextResponse.json(
           { error: "memberId is required to revoke a moderator." },
@@ -387,6 +397,8 @@ export async function PATCH(request: Request) {
         await group.save();
       }
 
+      await writeAdminAudit({ actor: access.session, action: "group.moderator.revoked", entityType: "group", entityId: String(group._id), request, before: { userId: member.userId, platformRole: currentRole, groupRole: "admin" }, after: { userId: member.userId, platformRole: nextRole, groupRole: member.role } });
+
       return NextResponse.json({
         ok: true,
         message: "Moderator access revoked. Group ownership moved to admin.",
@@ -413,6 +425,7 @@ export async function PATCH(request: Request) {
         );
       }
 
+      const previousOwnerId = group.createdBy;
       group.createdBy = member.userId;
       await group.save();
 
@@ -424,6 +437,8 @@ export async function PATCH(request: Request) {
         { _id: member._id },
         { $set: { role: "admin", status: "active" } }
       );
+
+      await writeAdminAudit({ actor: access.session, action: "group.owner.transferred", entityType: "group", entityId: String(group._id), request, before: { ownerId: previousOwnerId }, after: { ownerId: group.createdBy, memberId: String(member._id) } });
 
       return NextResponse.json({ ok: true });
     }

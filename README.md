@@ -32,6 +32,33 @@ pnpm auth:migrate-clerk
 
 The import preserves each legacy account ID as the Clerk external ID so group membership, ownership, and financial audit records keep their existing references. It assigns every legacy account an unknown random password; each existing user must choose a new password using **Forgot password** after cutover. The import is safe to rerun: it updates users by external ID or matching email rather than creating duplicates. Do not deploy the Clerk cutover until the import completes and the Clerk email/password recovery settings and production keys are in place.
 
+### Super Admin access
+
+Platform administration uses the separate `admin_access` collection. A Chama group administrator or a user with a legacy `role: "admin"` value does not receive `/admin` access from that role alone. After Clerk and MongoDB are configured, sign in to the app once with the existing account that will own platform access, then provision the first Super Admin from a secure operator shell:
+
+```powershell
+$env:SUPER_ADMIN_EMAIL = "owner@example.com"
+pnpm admin:bootstrap
+```
+
+The command requires exactly one existing Clerk account with that verified email and a matching ChamaPulse user record. It refuses to provision a second Super Admin. Protect the owner account with Clerk MFA. Do not put the email or other runtime credentials in source control; later administrator roles are granted from `/admin` and are stored separately from group membership.
+
+`/admin` reads grants from `admin_access`; roles or permissions in a browser session and ordinary chama member roles do not grant access. The first admin request creates indexes for admin audit/access collections and the paginated admin queries. The `admin_access_invites`, `admin_audit`, `admin_action_limits`, and `admin_user_notes` collections are created as needed.
+
+Admin API surface:
+
+- `GET /api/admin/dashboard` — date-filtered platform counts, trends, and recent records.
+- `GET /api/admin/users`, `GET /api/admin/users/:userId`, `PATCH /api/admin/users/:userId` — paginated accounts, group/ledger history, notes, session revocation, suspension, reactivation, and secure recovery instructions through the existing Clerk flow.
+- `GET /api/admin/groups`, `GET /api/admin/groups/:groupId`, `PATCH /api/admin/groups/:groupId` — paginated group records and read-only profiles; status updates use the existing active/archived values.
+- `GET /api/admin/finance` — paginated, read-only financial ledger; CSV export is available with `format=csv`.
+- `GET /api/admin/staff`, `POST /api/admin/staff` — existing-account grants and Clerk email invitations with role, module permissions, and optional expiry. Invitation access is activated only after the invited Clerk account verifies and claims its invitation.
+- `GET /api/admin/audit` — filters and paginated audit history; CSV export is available with `format=csv`.
+- `GET /api/admin/system` — read-only database and integration readiness. It never returns secret values.
+
+Administrative audit rows are application append-only: there are no update or delete endpoints. Sensitive writes and report exports record actor, target, time, request IP when available, and filtered before/after data. The MongoDB deployment should also use an application DB principal without collection drop/delete privileges for audit collections and restricted operator access; application code cannot protect logs from a MongoDB owner.
+
+The admin console intentionally does not create or alter financial balances. Contributions and payouts remain visible from `ChamaFinancialTransaction`; a correction must use the existing reversal/adjustment business flow. This repo currently has no subscription/billing models, platform support-ticket store, login-history store, maintenance-mode enforcement, moderator case metrics, or impersonation-session implementation. These modules are reported as unavailable instead of showing fabricated metrics. Email recovery notifications use the existing Clerk recovery page; password values and tokens are never handled by admin endpoints. Account deletion is not provided because the app has no approved user-retention/deletion workflow for linked financial records.
+
 ## Notifications and attendance
 
 Email notifications use `EMAIL_USER` and `EMAIL_PASS`. SMS is optional and uses the Twilio variables in `.env.example`. Google Meet attendance sync uses the Google OAuth variables there. Protect the scheduled notification endpoint with `JOBS_TOKEN` and schedule it to call `/api/jobs/chama-call-notifications`.
