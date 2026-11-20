@@ -14,5 +14,6 @@ export default async function Page({ params }: { params: Promise<{ userId: strin
     canSuspend={canAccessPermission(grant, "users.suspend")}
     canWrite={canAccessPermission(grant, "users.write")}
     canRevokeSessions={canAccessPermission(grant, "users.sessions.revoke")}
+    canImpersonate={canAccessPermission(grant, "users.impersonate")}
   />;
 }

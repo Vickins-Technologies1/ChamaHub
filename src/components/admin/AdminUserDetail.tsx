@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
-import { ArrowLeft, KeyRound, LoaderCircle, ShieldAlert, Users, Wallet } from "lucide-react";
+import { ArrowLeft, Eye, KeyRound, LoaderCircle, ShieldAlert, Users, Wallet } from "lucide-react";
 import { formatMinorUnits } from "@/lib/finance/money";
 
 type Tab = "overview" | "groups" | "transactions" | "subscriptions" | "activity" | "security" | "notes";
@@ -24,7 +24,7 @@ function money(row: Row) {
   return "Historic amount unavailable";
 }
 
-export default function AdminUserDetail({ userId, canSuspend, canWrite, canRevokeSessions }: { userId: string; canSuspend: boolean; canWrite: boolean; canRevokeSessions: boolean }) {
+export default function AdminUserDetail({ userId, canSuspend, canWrite, canRevokeSessions, canImpersonate }: { userId: string; canSuspend: boolean; canWrite: boolean; canRevokeSessions: boolean; canImpersonate: boolean }) {
   const [profile, setProfile] = useState<Profile | null>(null);
   const [tab, setTab] = useState<Tab>("overview");
   const [loading, setLoading] = useState(true);
@@ -62,11 +62,24 @@ export default function AdminUserDetail({ userId, canSuspend, canWrite, canRevok
     await runAction("add-note", { text: note });
     setNote("");
   };
+  const startImpersonation = async () => {
+    const reason = window.prompt("Describe the support or investigation reason (10–1,000 characters):", "");
+    if (!reason || reason.trim().length < 10) { setError("A specific investigation reason of at least ten characters is required."); return; }
+    setPending(true); setError("");
+    try {
+      const response = await fetch("/api/admin/impersonation", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ targetUserId: userId, reason: reason.trim() }) });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error ?? "Unable to start the restricted account view.");
+      window.location.assign("/admin");
+    } catch (cause) { setError(cause instanceof Error ? cause.message : "Unable to start the restricted account view."); }
+    finally { setPending(false); }
+  };
 
   return <div className="space-y-5">
     <div><Link href="/admin/users" className="mb-3 inline-flex items-center gap-2 text-xs font-semibold text-[var(--button-bg)]"><ArrowLeft size={14} />All users</Link><div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between"><div><p className="text-xs font-semibold uppercase tracking-[0.22em] text-[var(--muted)]">User profile</p><h2 className="mt-1 text-2xl font-semibold">{display(account.name)}</h2><p className="mt-1 text-sm text-[var(--muted)]">{display(account.email)} · <span className="font-mono">{userId}</span></p></div><div className="flex flex-wrap gap-2"><span className="rounded-full border border-[var(--dash-border)] px-3 py-1.5 text-xs capitalize">{display(account.role)}</span><span className="rounded-full border border-[var(--dash-border)] px-3 py-1.5 text-xs capitalize">{display(account.status)}</span>
       {canSuspend ? <button className="dashboard-export-button" disabled={pending} onClick={() => { const suspend = account.status !== "suspended"; if (!window.confirm(`${suspend ? "Suspend" : "Reactivate"} this account?`)) return; const reason = window.prompt(suspend ? "Reason for suspension (required):" : "Reason for reactivation (optional):", "") ?? ""; if (suspend && reason.trim().length < 5) { setError("Enter a reason of at least five characters."); return; } void runAction(suspend ? "suspend" : "reactivate", { reason }); }}>{account.status === "suspended" ? "Reactivate" : "Suspend"}</button> : null}
       {canRevokeSessions ? <button className="dashboard-export-button" disabled={pending} onClick={() => { if (window.confirm("Revoke all active sessions for this account?")) void runAction("revoke-sessions"); }}><KeyRound size={14} />Revoke sessions</button> : null}</div></div></div>
+      {canImpersonate ? <button className="dashboard-export-button" disabled={pending || account.status === "suspended"} onClick={() => void startImpersonation()}><Eye size={14} />Open restricted support view</button> : null}
 
     {error ? <div role="alert" className="rounded-lg border border-rose-300/40 p-3 text-sm text-rose-600">{error}</div> : null}{message ? <div className="rounded-lg border border-emerald-300/40 p-3 text-sm text-emerald-700">{message}</div> : null}
     <section className="glass-panel overflow-x-auto"><div className="flex min-w-max gap-1 border-b border-[var(--dash-border)] p-2">{tabs.map((item) => <button key={item.id} onClick={() => setTab(item.id)} className={`rounded-lg px-3 py-2 text-xs font-semibold ${tab === item.id ? "bg-[var(--dash-sidebar-active)] text-[var(--button-bg)]" : "text-[var(--muted)] hover:bg-[var(--dash-sidebar-hover)]"}`}>{item.label}</button>)}</div><div className="p-4 sm:p-5">
@@ -76,7 +89,7 @@ export default function AdminUserDetail({ userId, canSuspend, canWrite, canRevok
       {tab === "transactions" ? <DataTable headings={["Group", "Type", "Amount", "Status", "Reference", "Date"]} rows={profile?.transactions ?? []} cells={(row) => [row.groupName, row.type, money(row), row.status, row.reference, row.transactionDate]} /> : null}
       {tab === "subscriptions" ? <Unavailable title="Subscription records are not configured" detail="This project has no subscription or billing collections connected to the account system." /> : null}
       {tab === "activity" ? <><p className="mb-3 text-xs text-[var(--muted)]">Administrative changes linked to this account. User login events are not stored by the current app.</p><DataTable headings={["Time", "Action", "Actor", "Context"]} rows={profile?.activity ?? []} cells={(row) => [row.occurredAt, row.action, row.actorId, row.metadata]} /></> : null}
-      {tab === "security" ? <div className="space-y-4"><div className="rounded-xl border border-[var(--dash-border)] p-4"><h3 className="font-semibold">Authentication sessions</h3><p className="mt-2 text-sm text-[var(--muted)]">{profile?.security?.activeSessions ?? 0} active session(s) reported by Clerk.</p>{canRevokeSessions ? <button className="mt-3 dashboard-export-button" disabled={pending || !profile?.security?.activeSessions} onClick={() => { if (window.confirm("Revoke all active sessions for this account?")) void runAction("revoke-sessions"); }}><KeyRound size={14} />Revoke all active sessions</button> : null}{canWrite ? <button className="mt-3 ml-2 dashboard-export-button" disabled={pending} onClick={() => { if (window.confirm("Send this user a link to the existing secure password recovery flow?")) void runAction("send-password-recovery"); }}><KeyRound size={14} />Send recovery instructions</button> : null}</div><div className="flex items-start gap-3 rounded-xl bg-[var(--dash-sidebar-hover)] p-4 text-sm text-[var(--muted)]"><ShieldAlert size={16} className="mt-0.5 shrink-0" /><span>Login history and password reset triggers are not available in the current authentication integration. Recovery instructions link to Clerk&apos;s existing verified email flow.</span></div><Unavailable title="Impersonation is not enabled" detail="The app has no server-side impersonation session flow yet. No user session can be switched from this control centre." /></div> : null}
+      {tab === "security" ? <div className="space-y-4"><div className="rounded-xl border border-[var(--dash-border)] p-4"><h3 className="font-semibold">Authentication sessions</h3><p className="mt-2 text-sm text-[var(--muted)]">{profile?.security?.activeSessions ?? 0} active session(s) reported by Clerk.</p>{canRevokeSessions ? <button className="mt-3 dashboard-export-button" disabled={pending || !profile?.security?.activeSessions} onClick={() => { if (window.confirm("Revoke all active sessions for this account?")) void runAction("revoke-sessions"); }}><KeyRound size={14} />Revoke all active sessions</button> : null}{canWrite ? <button className="mt-3 ml-2 dashboard-export-button" disabled={pending} onClick={() => { if (window.confirm("Send this user a link to the existing secure password recovery flow?")) void runAction("send-password-recovery"); }}><KeyRound size={14} />Send recovery instructions</button> : null}</div><div className="flex items-start gap-3 rounded-xl bg-[var(--dash-sidebar-hover)] p-4 text-sm text-[var(--muted)]"><ShieldAlert size={16} className="mt-0.5 shrink-0" /><span>Login history and password reset triggers are not available in the current authentication integration. Recovery instructions link to Clerk&apos;s existing verified email flow.</span></div>{canImpersonate ? <p className="text-xs text-[var(--muted)]">Use “Open restricted support view” above for a time-limited, read-only troubleshooting session. Clerk credentials are never switched.</p> : null}</div> : null}
       {tab === "notes" ? <div className="space-y-4"><p className="text-xs text-[var(--muted)]">Internal admin notes are visible only to authorized platform staff.</p>{canWrite ? <form onSubmit={(event) => void addNote(event)} className="flex flex-col gap-2 sm:flex-row"><textarea required maxLength={4000} className="glass-input min-h-20 flex-1" value={note} onChange={(event) => setNote(event.target.value)} placeholder="Add a factual internal note…" /><button disabled={pending || note.trim().length === 0} className="dashboard-export-button self-start">Add note</button></form> : null}<div className="space-y-3">{(profile?.notes ?? []).map((entry) => <article key={String(entry.id)} className="rounded-xl border border-[var(--dash-border)] p-4"><p className="whitespace-pre-wrap text-sm">{display(entry.text)}</p><p className="mt-3 text-xs text-[var(--muted)]">{display(entry.authorName)} · {display(entry.createdAt)}</p></article>)}{(profile?.notes ?? []).length === 0 ? <p className="text-sm text-[var(--muted)]">No internal notes.</p> : null}</div></div> : null}
     </div></section>
   </div>;

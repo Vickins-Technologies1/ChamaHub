@@ -14,6 +14,7 @@ import {
 import Link from "next/link";
 import { authClient } from "@/lib/auth-client";
 import Modal from "@/components/Modal";
+import { usePlatformFeature } from "@/lib/platform/feature-context";
 
 type GroupSummary = {
   id: string;
@@ -72,6 +73,7 @@ const textAreaClass = `${inputClass} min-h-[120px] resize-none`;
 
 export default function SecretaryPanelPage() {
   const { data: session } = authClient.useSession();
+  const notificationsEnabled = usePlatformFeature("notifications");
   const [groups, setGroups] = useState<GroupSummary[]>([]);
   const [selectedGroup, setSelectedGroup] = useState("");
   const [groupDetail, setGroupDetail] = useState<GroupDetail | null>(null);
@@ -265,6 +267,7 @@ export default function SecretaryPanelPage() {
   };
 
   const handleCreateAnnouncement = async () => {
+    if (!notificationsEnabled) { setError("Notifications are temporarily disabled by the platform administrator."); return; }
     setMessage("");
     setError("");
     if (!announcementForm.title || !announcementForm.message) {
@@ -543,6 +546,7 @@ export default function SecretaryPanelPage() {
             <button
               type="button"
               onClick={() => setAnnouncementOpen(true)}
+              disabled={!notificationsEnabled}
               className="ml-auto inline-flex items-center gap-2 px-4 py-2 rounded-full bg-[var(--button-bg)] text-white text-sm font-semibold"
             >
               <Megaphone size={16} />

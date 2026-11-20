@@ -12,8 +12,21 @@ export const ADMIN_PERMISSIONS = [
   "finance.read",
   "staff.read",
   "staff.write",
+  "staff.impersonate",
+  "users.impersonate",
+  "notifications.read",
+  "notifications.write",
+  "support.tickets.read",
+  "support.tickets.manage",
+  "support.tickets.respond",
   "audit.read",
   "system.read",
+  "system.settings.write",
+  "features.write",
+  "security.read",
+  "security.write",
+  "analytics.read",
+  "reports.export",
 ] as const;
 export type AdminPermission = (typeof ADMIN_PERMISSIONS)[number];
 

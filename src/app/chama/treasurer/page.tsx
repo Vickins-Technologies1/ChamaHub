@@ -15,6 +15,7 @@ import Link from "next/link";
 import { authClient } from "@/lib/auth-client";
 import Modal from "@/components/Modal";
 import { fromMinorUnits, formatMinorUnits } from "@/lib/finance/money";
+import { usePlatformFeature } from "@/lib/platform/feature-context";
 
 type GroupSummary = {
   id: string;
@@ -102,6 +103,8 @@ const inputClass = "glass-input";
 
 export default function TreasurerPanelPage() {
   const { data: session } = authClient.useSession();
+  const contributionsEnabled = usePlatformFeature("contributions");
+  const payoutsEnabled = usePlatformFeature("payouts");
   const [groups, setGroups] = useState<GroupSummary[]>([]);
   const [selectedGroup, setSelectedGroup] = useState("");
   const [groupDetail, setGroupDetail] = useState<GroupDetail | null>(null);
@@ -245,6 +248,7 @@ export default function TreasurerPanelPage() {
   }, [selectedGroup]);
 
   const handleRecordContribution = async () => {
+    if (!contributionsEnabled) { setError("Contributions are temporarily disabled by the platform administrator."); return; }
     setMessage("");
     setError("");
     if (!openRound?.id) {
@@ -305,6 +309,7 @@ export default function TreasurerPanelPage() {
   };
 
   const handleCreatePayout = async () => {
+    if (!payoutsEnabled) { setError("Payouts are temporarily disabled by the platform administrator."); return; }
     if (!openRound?.id || !payoutForm.amount || !payoutForm.method) return;
     setError("");
     setMessage("");
@@ -336,6 +341,7 @@ export default function TreasurerPanelPage() {
   };
 
   const handleTransferPayout = async () => {
+    if (!payoutsEnabled) { setError("Payouts are temporarily disabled by the platform administrator."); return; }
     if (!payout || !payoutForm.reference.trim()) return;
     setError("");
     const pendingKey = "payout-transfer";
@@ -358,6 +364,7 @@ export default function TreasurerPanelPage() {
   };
 
   const handleRetryPayout = async () => {
+    if (!payoutsEnabled) { setError("Payouts are temporarily disabled by the platform administrator."); return; }
     if (!payout) return;
     const reason = window.prompt("Why is this failed payout being retried?");
     if (!reason || reason.trim().length < 5) return;
@@ -671,7 +678,7 @@ export default function TreasurerPanelPage() {
                 <input className={inputClass} placeholder="Payout amount" value={payoutForm.amount} onChange={(event) => setPayoutForm((prev) => ({ ...prev, amount: event.target.value }))} />
                 <input className={inputClass} placeholder="Payment method" value={payoutForm.method} onChange={(event) => setPayoutForm((prev) => ({ ...prev, method: event.target.value }))} />
                 <input className={inputClass} placeholder="Reference" value={payoutForm.reference} onChange={(event) => setPayoutForm((prev) => ({ ...prev, reference: event.target.value }))} />
-                <button type="button" onClick={handleCreatePayout} disabled={pending["payout-create"] || openRound.snapshotStatus !== "confirmed"} className="sm:col-span-3 inline-flex items-center justify-center gap-2 px-4 py-2 rounded-full bg-[var(--button-bg)] text-white text-sm font-semibold disabled:opacity-60">
+                <button type="button" onClick={handleCreatePayout} disabled={!payoutsEnabled || pending["payout-create"] || openRound.snapshotStatus !== "confirmed"} className="sm:col-span-3 inline-flex items-center justify-center gap-2 px-4 py-2 rounded-full bg-[var(--button-bg)] text-white text-sm font-semibold disabled:opacity-60">
                   {pending["payout-create"] && <Loader2 size={14} className="animate-spin" />}
                   Record payout for transfer
                 </button>
@@ -680,14 +687,14 @@ export default function TreasurerPanelPage() {
             {payout?.status === "pending_transfer" && (
               <div className="space-y-2">
                 <input className={inputClass} placeholder="Transfer reference required" value={payoutForm.reference} onChange={(event) => setPayoutForm((prev) => ({ ...prev, reference: event.target.value }))} />
-                <button type="button" onClick={handleTransferPayout} disabled={pending["payout-transfer"] || !payoutForm.reference.trim()} className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-[var(--button-bg)] text-white text-sm font-semibold disabled:opacity-60">
+                <button type="button" onClick={handleTransferPayout} disabled={!payoutsEnabled || pending["payout-transfer"] || !payoutForm.reference.trim()} className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-[var(--button-bg)] text-white text-sm font-semibold disabled:opacity-60">
                   {pending["payout-transfer"] && <Loader2 size={14} className="animate-spin" />}
                   Mark transfer sent
                 </button>
               </div>
             )}
             {payout?.status === "failed" && (
-              <button type="button" onClick={handleRetryPayout} disabled={pending["payout-retry"]} className="inline-flex items-center gap-2 px-4 py-2 rounded-full border border-amber-500 text-amber-800 text-sm font-semibold disabled:opacity-60">
+              <button type="button" onClick={handleRetryPayout} disabled={!payoutsEnabled || pending["payout-retry"]} className="inline-flex items-center gap-2 px-4 py-2 rounded-full border border-amber-500 text-amber-800 text-sm font-semibold disabled:opacity-60">
                 {pending["payout-retry"] && <Loader2 size={14} className="animate-spin" />}
                 Authorize payout retry
               </button>
@@ -850,7 +857,7 @@ export default function TreasurerPanelPage() {
           <button
             type="button"
             onClick={handleRecordContribution}
-            disabled={!openRound?.id || pending["contribution-record"]}
+            disabled={!contributionsEnabled || !openRound?.id || pending["contribution-record"]}
             className="inline-flex items-center gap-2 px-5 py-3 rounded-full bg-[var(--button-bg)] text-white text-sm font-semibold disabled:opacity-70"
           >
             {pending["contribution-record"] ? (

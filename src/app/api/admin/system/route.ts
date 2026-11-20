@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import connectToDatabase from "@/lib/mongodb";
 import { getMpesaReadiness } from "@/lib/payments/mpesa-readiness";
 import { requireAdminPermission } from "@/lib/admin/access";
+import { FEATURE_REGISTRY, getMaintenanceSettings } from "@/lib/platform/config";
 
 export const dynamic = "force-dynamic";
 
@@ -16,6 +17,7 @@ export async function GET() {
     database = "unavailable";
   }
   const mpesa = getMpesaReadiness();
+  const maintenance = await getMaintenanceSettings().catch(() => null);
   return NextResponse.json({
     checkedAt: new Date(),
     services: {
@@ -27,9 +29,10 @@ export async function GET() {
       paymentGateway: { status: "disabled", provider: "M-Pesa", ready: mpesa.ready, mode: mpesa.mode, missingConfigurationKeys: mpesa.missing },
     },
     capabilities: {
-      maintenanceMode: "not implemented",
+      maintenanceMode: maintenance?.enabled ? "enabled" : "implemented and disabled",
+      featureFlags: FEATURE_REGISTRY.length + " global switches available",
       subscriptions: "not implemented",
-      supportTickets: "not implemented",
+      supportTickets: "implemented in the platform support store",
       loginHistory: "not available from the current application data model",
       backgroundJobHistory: "not stored",
     },

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useParams } from "next/navigation";
 import {
   ArrowRight,
@@ -19,6 +19,7 @@ import RotationWheel from "@/components/chama/RotationWheel";
 import { authClient } from "@/lib/auth-client";
 import Modal from "@/components/Modal";
 import { formatMinorUnits } from "@/lib/finance/money";
+import { usePlatformFeature } from "@/lib/platform/feature-context";
 
 type GroupDetail = {
   id: string;
@@ -105,6 +106,10 @@ export default function ChamaGroupPage() {
   const params = useParams();
   const groupId = params?.groupId as string;
   const { data: session } = authClient.useSession();
+  const invitationsEnabled = usePlatformFeature("group_invitations");
+  const contributionsEnabled = usePlatformFeature("contributions");
+  const payoutsEnabled = usePlatformFeature("payouts");
+  const meetingsEnabled = usePlatformFeature("meeting_management");
 
   const [group, setGroup] = useState<GroupDetail | null>(null);
   const [members, setMembers] = useState<Member[]>([]);
@@ -172,7 +177,7 @@ export default function ChamaGroupPage() {
   const setPendingKey = (key: string, value: boolean) =>
     setPending((prev) => ({ ...prev, [key]: value }));
 
-  const loadGroup = async (options: { silent?: boolean } = {}) => {
+  const loadGroup = useCallback(async (options: { silent?: boolean } = {}) => {
     if (options.silent) setRefreshing(true);
     else setInitialLoading(true);
 
@@ -221,9 +226,9 @@ export default function ChamaGroupPage() {
       if (options.silent) setRefreshing(false);
       else setInitialLoading(false);
     }
-  };
+  }, [groupId, session?.user?.id]);
 
-  const loadCalls = async () => {
+  const loadCalls = useCallback(async () => {
     if (!groupId) return;
     setCallsLoading(true);
     try {
@@ -236,7 +241,7 @@ export default function ChamaGroupPage() {
     } finally {
       setCallsLoading(false);
     }
-  };
+  }, [groupId]);
 
   const handleSyncAttendance = async (callId: string) => {
     setMessage("");
@@ -261,7 +266,7 @@ export default function ChamaGroupPage() {
     }
   };
 
-  const loadContributions = async (roundId?: string | null) => {
+  const loadContributions = useCallback(async (roundId?: string | null) => {
     if (!roundId) {
       setContributions([]);
       return;
@@ -277,25 +282,26 @@ export default function ChamaGroupPage() {
     } catch (err) {
       setError(err instanceof Error ? err.message : "Unable to load contributions.");
     }
-  };
+  }, [groupId]);
 
   useEffect(() => {
     if (groupId) {
       loadGroup();
     }
-  }, [groupId]);
+  }, [groupId, loadGroup]);
 
   useEffect(() => {
     if (groupId) {
       loadCalls();
     }
-  }, [groupId]);
+  }, [groupId, loadCalls]);
 
   useEffect(() => {
     loadContributions(openRoundId);
-  }, [openRoundId]);
+  }, [openRoundId, loadContributions]);
 
   const handleAddMember = async () => {
+    if (!invitationsEnabled) { setError("Group invitations are temporarily disabled by the platform administrator."); return; }
     setMessage("");
     setError("");
     if (!memberForm.email && !memberForm.phone) {
@@ -351,6 +357,7 @@ export default function ChamaGroupPage() {
   };
 
   const handleRecordContribution = async () => {
+    if (!contributionsEnabled) { setError("Contributions are temporarily disabled by the platform administrator."); return; }
     setMessage("");
     setError("");
     if (!openRoundId) {
@@ -415,6 +422,7 @@ export default function ChamaGroupPage() {
   };
 
   const handleConfirmPayout = async () => {
+    if (!payoutsEnabled) { setError("Payouts are temporarily disabled by the platform administrator."); return; }
     if (!currentPayout) return;
     setMessage("");
     setError("");
@@ -493,6 +501,7 @@ export default function ChamaGroupPage() {
   };
 
   const handleCreateCall = async () => {
+    if (!meetingsEnabled) { setError("Meeting management is temporarily disabled by the platform administrator."); return; }
     setMessage("");
     setError("");
     if (!callForm.title.trim()) {
@@ -633,7 +642,7 @@ export default function ChamaGroupPage() {
           {(canManageFinance || Boolean(currentPayout && currentPayout.status === "transferred" && myMember?.id === currentPayout.memberId)) && (
             <div className="flex flex-col gap-3">
               {currentPayout?.status === "transferred" && myMember?.id === currentPayout.memberId && (
-                <button type="button" onClick={handleConfirmPayout} disabled={pending["payout-confirm"]} className="inline-flex items-center gap-2 px-5 py-3 rounded-full border border-[var(--glass-border)] bg-white/70 text-sm font-semibold disabled:opacity-70">
+                <button type="button" onClick={handleConfirmPayout} disabled={!payoutsEnabled || pending["payout-confirm"]} className="inline-flex items-center gap-2 px-5 py-3 rounded-full border border-[var(--glass-border)] bg-white/70 text-sm font-semibold disabled:opacity-70">
                   {pending["payout-confirm"] ? <Loader2 size={16} className="animate-spin" /> : <CheckCircle2 size={16} />}
                   {pending["payout-confirm"] ? "Confirming..." : "Confirm payout received"}
                 </button>
@@ -825,6 +834,7 @@ export default function ChamaGroupPage() {
             <button
               type="button"
               onClick={() => setInviteOpen(true)}
+              disabled={!invitationsEnabled}
               className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-[var(--button-bg)] text-white text-sm font-semibold"
             >
               <UserPlus size={16} />
@@ -928,7 +938,7 @@ export default function ChamaGroupPage() {
             </p>
             <h2 className="text-xl font-semibold mt-2">Record contributions</h2>
             </div>
-            {(hasGroupPrivileges || Boolean(myMember)) && (
+            {contributionsEnabled && (hasGroupPrivileges || Boolean(myMember)) && (
               <button
                 type="button"
                 onClick={() => setContributionOpen(true)}
@@ -1112,6 +1122,7 @@ export default function ChamaGroupPage() {
                 <button
                   type="button"
                   onClick={() => setCallOpen(true)}
+                  disabled={!meetingsEnabled}
                   className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-[var(--button-bg)] text-white text-sm font-semibold"
                 >
                   <CalendarClock size={16} />
@@ -1209,7 +1220,7 @@ export default function ChamaGroupPage() {
           <button
             type="button"
             onClick={handleAddMember}
-            disabled={pending["member-invite"]}
+            disabled={!invitationsEnabled || pending["member-invite"]}
             className="inline-flex items-center gap-2 px-5 py-3 rounded-full bg-[var(--button-bg)] text-white text-sm font-semibold disabled:opacity-70"
           >
             {pending["member-invite"] ? (
@@ -1282,7 +1293,7 @@ export default function ChamaGroupPage() {
           <button
             type="button"
             onClick={handleRecordContribution}
-            disabled={!openRoundId || pending["contribution-record"]}
+            disabled={!contributionsEnabled || !openRoundId || pending["contribution-record"]}
             className="inline-flex items-center gap-2 px-5 py-3 rounded-full border border-[var(--glass-border)] bg-white/70 text-sm font-semibold disabled:opacity-70"
           >
             {pending["contribution-record"] ? (
@@ -1363,7 +1374,7 @@ export default function ChamaGroupPage() {
           <button
             type="button"
             onClick={handleCreateCall}
-            disabled={pending["call-create"]}
+            disabled={!meetingsEnabled || pending["call-create"]}
             className="inline-flex items-center gap-2 px-5 py-3 rounded-full bg-[var(--button-bg)] text-white text-sm font-semibold disabled:opacity-70"
           >
             {pending["call-create"] ? (

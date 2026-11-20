@@ -7,7 +7,8 @@ import { authClient } from "@/lib/auth-client";
 import { useClerk } from "@clerk/nextjs";
 import { PremiumDashboardShellLoader } from "@/components/dashboard/DashboardLoaders";
 import AdminLteShell from "@/components/dashboard/AdminLteShell";
-import { LayoutDashboard, Users, CalendarCheck, ClipboardList, Wallet, Sparkles } from "lucide-react";
+import { LayoutDashboard, Users, CalendarCheck, ClipboardList, Wallet, Sparkles, Bell, LifeBuoy } from "lucide-react";
+import { PlatformFeatureProvider } from "@/lib/platform/feature-context";
 
 export default function ChamaLayout({ children }: { children: React.ReactNode }) {
   const { data: session, isPending } = authClient.useSession();
@@ -18,14 +19,21 @@ export default function ChamaLayout({ children }: { children: React.ReactNode })
     hasSecretary: false,
     hasTreasurer: false,
   });
+  const [featureFlags, setFeatureFlags] = useState<Record<string, boolean> | null>(null);
 
   useEffect(() => {
     let isActive = true;
     const loadRolePanels = async () => {
       if (!session?.user) return;
       try {
-        const response = await fetch("/api/chama/groups", { cache: "no-store" });
+        const [response, featureResponse] = await Promise.all([
+          fetch("/api/chama/groups", { cache: "no-store" }),
+          fetch("/api/chama/features", { cache: "no-store" }),
+        ]);
         const data = await response.json();
+        const featureData = await featureResponse.json();
+        if (!isActive) return;
+        if (featureResponse.ok) setFeatureFlags(featureData.flags ?? {});
         if (!response.ok) return;
         const roles = (data.groups ?? []).map(
           (group: { membership?: { role?: string | null } | null }) => group.membership?.role
@@ -87,11 +95,14 @@ export default function ChamaLayout({ children }: { children: React.ReactNode })
   const isModerator = roleList.includes("moderator") || roleList.includes("admin");
   const canViewGroups =
     isModerator || rolePanels.hasGroupAdmin || rolePanels.hasSecretary || rolePanels.hasTreasurer;
+  const featureEnabled = (key: string) => featureFlags?.[key] !== false;
 
   const workspaceItems = [
     { href: "/chama", label: "Overview", icon: LayoutDashboard },
     ...(canViewGroups ? [{ href: "/chama/groups", label: "Groups", icon: Users }] : []),
-    { href: "/chama/ledger", label: "Contributions", icon: CalendarCheck },
+    ...(featureEnabled("contributions") ? [{ href: "/chama/ledger", label: "Contributions", icon: CalendarCheck }] : []),
+    ...(featureEnabled("notifications") ? [{ href: "/chama/notifications", label: "Notifications", icon: Bell }] : []),
+    { href: "/chama/support", label: "Support", icon: LifeBuoy },
   ];
   const groupTools = [
     ...(rolePanels.hasSecretary ? [{ href: "/chama/secretary", label: "Secretary", icon: ClipboardList }] : []),
@@ -107,6 +118,7 @@ export default function ChamaLayout({ children }: { children: React.ReactNode })
   };
 
   return (
+    <PlatformFeatureProvider flags={featureFlags}>
     <AdminLteShell
       appName="ChamaPulse"
       appHref="/chama"
@@ -118,15 +130,15 @@ export default function ChamaLayout({ children }: { children: React.ReactNode })
       quickActions={
         isModerator
           ? [
-              { href: "/chama/groups", label: "Create group" },
-              { href: "/chama/ledger", label: "Review contributions" },
+              ...(featureEnabled("group_creation") ? [{ href: "/chama/groups", label: "Create group" }] : []),
+              ...(featureEnabled("contributions") ? [{ href: "/chama/ledger", label: "Review contributions" }] : []),
             ]
           : rolePanels.hasTreasurer
             ? [
-                { href: "/chama/treasurer", label: "Record contribution" },
-                { href: "/chama/ledger", label: "View contributions" },
+                ...(featureEnabled("contributions") ? [{ href: "/chama/treasurer", label: "Record contribution" }] : []),
+                ...(featureEnabled("contributions") ? [{ href: "/chama/ledger", label: "View contributions" }] : []),
               ]
-            : [{ href: "/chama/ledger", label: "View contributions" }]
+            : (featureEnabled("contributions") ? [{ href: "/chama/ledger", label: "View contributions" }] : [])
       }
       user={{
         primary: session.user.name || session.user.email || "ChamaPulse user",
@@ -136,6 +148,7 @@ export default function ChamaLayout({ children }: { children: React.ReactNode })
     >
       {children}
     </AdminLteShell>
+    </PlatformFeatureProvider>
   );
 }
 

@@ -35,6 +35,8 @@ export async function GET(request: Request) {
   const access = await requireAdminPermission("staff.read");
   if (access.response) return access.response;
   if (!isSuperAdmin(access.session.grant)) return NextResponse.json({ error: "Only a Super Admin can inspect administrative access grants." }, { status: 403 });
+  const limited = await enforceAdminRateLimit({ userId: access.session.user.id, request, action: "staff-access-read", limit: 60 });
+  if (limited) return limited;
   const { page, pageSize, skip } = parsePageParams(new URL(request.url).searchParams);
   const db = await connectToDatabase();
   await ensureAdminIndexes(db);
@@ -47,11 +49,26 @@ export async function GET(request: Request) {
   const [total, grants, invitations] = await Promise.all([
     db.collection("admin_access").countDocuments({ $and: [{ role: { $ne: "SUPER_ADMIN" } }, searchFilter] }),
     db.collection("admin_access").find({ $and: [{ role: { $ne: "SUPER_ADMIN" } }, searchFilter] }, { projection: { userId: 1, clerkId: 1, email: 1, name: 1, role: 1, permissions: 1, status: 1, expiresAt: 1, createdAt: 1, updatedAt: 1 } }).sort({ createdAt: -1 }).skip(skip).limit(pageSize).toArray(),
-    db.collection("admin_access_invites").find({ status: "pending", expiresAt: { $gt: new Date() }, ...(search ? { email: { $regex: search.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), $options: "i" } } : {}) }, { projection: { email: 1, role: 1, permissions: 1, grantExpiresAt: 1, expiresAt: 1, createdAt: 1 } }).sort({ createdAt: -1 }).limit(100).toArray(),
+    db.collection("admin_access_invites").find({ ...(search ? { email: { $regex: search.replace(/[.*+?^$\u007b}()|[\]\\]/g, "\\$&"), $options: "i" } } : {}) }, { projection: { inviteId: 1, email: 1, role: 1, permissions: 1, grantExpiresAt: 1, expiresAt: 1, createdAt: 1, status: 1, claimedAt: 1, revokedAt: 1 } }).sort({ createdAt: -1 }).limit(100).toArray(),
   ]);
+  const staffIds = grants.map((grant) => String(grant.userId));
+  const staffActivity = staffIds.length ? await db.collection("admin_audit").aggregate([
+    { $match: { actorId: { $in: staffIds } } },
+    { $sort: { occurredAt: -1 } },
+    { $group: {
+      _id: "$actorId",
+      totalActions: { $sum: 1 },
+      lastActivity: { $first: "$occurredAt" },
+      usersManaged: { $sum: { $cond: [{ $and: [{ $eq: ["$entityType", "user"] }, { $ne: ["$action", "user.note.added"] }] }, 1, 0] } },
+      groupsReviewed: { $sum: { $cond: [{ $eq: ["$action", "group.reviewed"] }, 1, 0] } },
+      ticketsResolved: { $sum: { $cond: [{ $in: ["$action", ["support.ticket.resolved", "support.ticket.closed"]] }, 1, 0] } },
+      suspensions: { $sum: { $cond: [{ $eq: ["$action", "user.suspended"] }, 1, 0] } },
+    } },
+  ]).toArray() : [];
+  const activityById = new Map(staffActivity.map((entry) => [String(entry._id), entry]));
   return NextResponse.json({
-    items: grants.map((grant) => ({ ...grant, status: grant.expiresAt instanceof Date && grant.expiresAt <= new Date() ? "expired" : grant.status, _id: String(grant._id), userId: String(grant.userId), clerkId: String(grant.clerkId ?? "") })),
-    invitations: invitations.map((invite) => ({ ...invite, _id: String(invite._id), inviteId: undefined })),
+    items: grants.map((grant) => ({ ...grant, status: grant.expiresAt instanceof Date && grant.expiresAt <= new Date() ? "expired" : grant.status, _id: String(grant._id), userId: String(grant.userId), clerkId: String(grant.clerkId ?? ""), metrics: activityById.get(String(grant.userId)) ?? { totalActions: 0, usersManaged: 0, groupsReviewed: 0, ticketsResolved: 0, suspensions: 0, lastActivity: null } })),
+    invitations: invitations.map((invite) => ({ ...invite, status: invite.status === "pending" && invite.expiresAt instanceof Date && invite.expiresAt <= new Date() ? "expired" : invite.status, _id: String(invite._id) })),
     total, page, pageSize,
   });
 }
@@ -74,6 +91,8 @@ export async function POST(request: Request) {
     const email = typeof body.email === "string" ? body.email.trim().toLowerCase() : "";
     const grant = parseGrant(body);
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) || !grant) return NextResponse.json({ error: "Provide a valid email, role, and permission list. Super Admin invitations require secure bootstrap." }, { status: 400 });
+    const pendingInvite = await db.collection("admin_access_invites").findOne({ email, status: "pending", expiresAt: { $gt: new Date() } });
+    if (pendingInvite) return NextResponse.json({ error: "A live invitation already exists for this email address." }, { status: 409 });
     const existingAccount = await db.collection("user").findOne({ email }, { projection: { id: 1 } });
     if (existingAccount) return NextResponse.json({ error: "This email already has an account. Use its account ID to grant access." }, { status: 409 });
     const inviteId = randomUUID();
@@ -96,6 +115,25 @@ export async function POST(request: Request) {
     }
     await writeAdminAudit({ actor: access.session, action: "staff.invited", entityType: "admin_invitation", entityId: inviteId, request, after: { email, role: grant.role, permissions: grant.permissions, expiresAt } });
     return NextResponse.json({ ok: true, inviteId, expiresAt }, { status: 201 });
+  }
+
+  if (action === "revoke-invitation") {
+    const inviteId = typeof body.inviteId === "string" ? body.inviteId.trim() : "";
+    if (!inviteId) return NextResponse.json({ error: "An invitation reference is required." }, { status: 400 });
+    const invite = await db.collection("admin_access_invites").findOne({ inviteId, status: "pending" });
+    if (!invite) return NextResponse.json({ error: "Pending invitation not found." }, { status: 404 });
+    await db.collection("admin_access_invites").updateOne({ inviteId, status: "pending" }, { $set: { status: "revoked", revokedAt: new Date(), revokedBy: access.session.user.id } });
+    let clerkRevoked = false;
+    if (typeof invite.clerkInvitationId === "string") {
+      try {
+        await (await clerkClient()).invitations.revokeInvitation(invite.clerkInvitationId);
+        clerkRevoked = true;
+      } catch {
+        // Local status blocks claiming even if Clerk revocation is unavailable.
+      }
+    }
+    await writeAdminAudit({ actor: access.session, action: "staff.invitation.revoked", entityType: "admin_invitation", entityId: inviteId, request, before: { status: "pending" }, after: { status: "revoked" }, metadata: { email: invite.email, clerkRevoked } });
+    return NextResponse.json({ ok: true, clerkRevoked });
   }
 
   const userId = typeof body.userId === "string" ? body.userId.trim() : "";

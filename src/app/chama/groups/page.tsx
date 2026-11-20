@@ -15,6 +15,7 @@ import {
 import { authClient } from "@/lib/auth-client";
 import Modal from "@/components/Modal";
 import { Skeleton } from "@/components/ui/Skeleton";
+import { usePlatformFeature } from "@/lib/platform/feature-context";
 
 type GroupMembership = {
   role: string;
@@ -53,6 +54,7 @@ const formatShortDate = (value?: string) =>
 
 export default function ChamaGroupsPage() {
   const { data: session } = authClient.useSession();
+  const canCreateGroup = usePlatformFeature("group_creation");
   const [groups, setGroups] = useState<GroupSummary[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -148,6 +150,7 @@ export default function ChamaGroupsPage() {
   );
 
   const handleCreateGroup = async () => {
+    if (!canCreateGroup) { setError("Group creation is temporarily disabled by the platform administrator."); return; }
     setMessage("");
     setError("");
     if (!form.name.trim() || !form.contributionAmount) {
@@ -192,7 +195,7 @@ export default function ChamaGroupsPage() {
               Filter active groups, track open rounds, and launch new savings cycles fast.
             </p>
           </div>
-          {(isModerator || isAdmin) && (
+          {(isModerator || isAdmin) && canCreateGroup && (
             <button
               type="button"
               onClick={() => setIsCreateOpen(true)}
@@ -374,7 +377,7 @@ export default function ChamaGroupsPage() {
         </div>
 
         <div className="space-y-5">
-          {(isModerator || isAdmin) ? (
+          {(isModerator || isAdmin) && canCreateGroup ? (
             <div className="glass-panel p-6 sm:p-7 space-y-4">
               <div>
                 <p className="text-xs uppercase tracking-[0.3em] text-[var(--muted)]">Create group</p>

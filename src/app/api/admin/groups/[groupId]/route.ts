@@ -18,6 +18,7 @@ export async function GET(request: Request, context: { params: Promise<{ groupId
   const id = new Types.ObjectId(groupId);
   const group = await db.collection("chamagroups").findOne({ _id: id });
   if (!group) return NextResponse.json({ error: "Group not found." }, { status: 404 });
+  await writeAdminAudit({ actor: access.session, action: "group.reviewed", entityType: "group", entityId: groupId, request, metadata: { tab } });
 
   if (tab === "overview") {
     const [memberCounts, financial, rounds, recentTransactions, owner] = await Promise.all([

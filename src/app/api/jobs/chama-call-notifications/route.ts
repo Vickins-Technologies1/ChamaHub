@@ -4,6 +4,8 @@ import ChamaCallModel from "@/lib/models/chama-call";
 import ChamaAnnouncementModel from "@/lib/models/chama-announcement";
 import { notifyGroupCallMembers } from "@/lib/chama-call-notifications";
 import { deliverAnnouncement } from "@/lib/chama-announcement-notifications";
+import { deliverScheduledPlatformNotifications } from "@/lib/admin/notifications";
+import { isFeatureEnabled } from "@/lib/platform/config";
 
 const getAuthToken = (request: NextRequest) => {
   const header = request.headers.get("authorization");
@@ -25,23 +27,24 @@ export async function GET(request: NextRequest) {
   await connectMongoose();
 
   const now = new Date();
+  const notificationsEnabled = await isFeatureEnabled("notifications");
   const startingCutoff = new Date(now.getTime() - 2 * 60 * 60 * 1000);
 
-  const scheduledBackfill = await ChamaCallModel.find({
+  const scheduledBackfill = notificationsEnabled ? await ChamaCallModel.find({
     scheduledFor: { $gt: now },
     scheduledNotifiedAt: { $exists: false },
   })
     .sort({ scheduledFor: 1 })
     .limit(25)
-    .lean();
+    .lean() : [];
 
-  const startingDue = await ChamaCallModel.find({
+  const startingDue = notificationsEnabled ? await ChamaCallModel.find({
     scheduledFor: { $lte: now, $gte: startingCutoff },
     startingNotifiedAt: { $exists: false },
   })
     .sort({ scheduledFor: -1 })
     .limit(25)
-    .lean();
+    .lean() : [];
 
   let scheduledProcessed = 0;
   let startingProcessed = 0;
@@ -95,12 +98,12 @@ export async function GET(request: NextRequest) {
     }
   }
 
-  const scheduledAnnouncements = await ChamaAnnouncementModel.find({
+  const scheduledAnnouncements = notificationsEnabled ? await ChamaAnnouncementModel.find({
     scheduledFor: { $lte: now },
     deliveredAt: { $exists: false },
   })
     .sort({ scheduledFor: 1 })
-    .limit(25);
+    .limit(25) : [];
 
   for (const announcement of scheduledAnnouncements) {
     try {
@@ -119,6 +122,10 @@ export async function GET(request: NextRequest) {
     }
   }
 
+  const platformNotifications = notificationsEnabled
+    ? await deliverScheduledPlatformNotifications()
+    : { due: 0, published: 0, batchesProcessed: 0, paused: "notifications feature is disabled" };
+
   return NextResponse.json({
     scheduled: {
       processed: scheduledProcessed,
@@ -132,6 +139,7 @@ export async function GET(request: NextRequest) {
       processed: scheduledAnnouncements.length,
       delivered: announcementsDelivered,
     },
+    platformNotifications,
     ranAt: now.toISOString(),
   });
 }

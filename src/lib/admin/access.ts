@@ -1,4 +1,5 @@
 import { headers } from "next/headers";
+import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
 import { createHash } from "node:crypto";
 import type { Collection, Db, Document } from "mongodb";
@@ -41,6 +42,22 @@ export async function ensureAdminIndexes(db?: Db) {
         database.collection("admin_audit").createIndex({ entityType: 1, entityId: 1, occurredAt: -1 }),
         database.collection("admin_action_limits").createIndex({ expiresAt: 1 }, { expireAfterSeconds: 0 }),
         database.collection("admin_user_notes").createIndex({ targetUserId: 1, createdAt: -1 }),
+        database.collection("admin_impersonation_sessions").createIndex({ status: 1, expiresAt: 1 }),
+        database.collection("admin_impersonation_sessions").createIndex({ actorId: 1, startedAt: -1 }),
+        database.collection("admin_notifications").createIndex({ status: 1, scheduledFor: 1, createdAt: -1 }),
+        database.collection("admin_notification_recipients").createIndex({ notificationId: 1, userId: 1 }, { unique: true }),
+        database.collection("admin_notification_recipients").createIndex({ notificationId: 1, status: 1, _id: 1 }),
+        database.collection("user_notifications").createIndex({ userId: 1, createdAt: -1 }),
+        database.collection("user_notifications").createIndex({ notificationId: 1, userId: 1 }, { unique: true }),
+        database.collection("platform_settings").createIndex({ _id: 1 }),
+        database.collection("platform_feature_flags").createIndex({ key: 1 }, { unique: true }),
+        database.collection("admin_support_tickets").createIndex({ status: 1, priority: -1, updatedAt: -1 }),
+        database.collection("admin_support_tickets").createIndex({ assignedTo: 1, status: 1, updatedAt: -1 }),
+        database.collection("admin_support_tickets").createIndex({ reference: 1 }, { unique: true }),
+        database.collection("admin_security_alerts").createIndex({ fingerprint: 1 }, { unique: true }),
+        database.collection("admin_security_alerts").createIndex({ status: 1, severity: -1, createdAt: -1 }),
+        database.collection("admin_security_events").createIndex({ occurredAt: -1 }),
+        database.collection("admin_security_events").createIndex({ actorId: 1, occurredAt: -1 }),
         database.collection("user").createIndex({ createdAt: -1 }),
         database.collection("user").createIndex({ email: 1 }),
         database.collection("chamagroups").createIndex({ createdAt: -1, _id: -1 }),
@@ -75,22 +92,63 @@ export async function getAdminSession(): Promise<AdminSession | null> {
   const user = await getSessionUser();
   if (!user) return null;
   const grant = await getAdminGrantForUser(user.id);
-  return grant ? { user, grant } : null;
+  if (!grant) return null;
+  const cookieStore = await cookies();
+  const token = cookieStore.get("chp_admin_impersonation")?.value;
+  if (token) {
+    const db = await connectToDatabase();
+    const active = await db.collection<{ _id: string }>("admin_impersonation_sessions").findOne({
+      _id: createHash("sha256").update(token).digest("hex"),
+      actorId: user.id,
+      status: "active",
+      expiresAt: { $gt: new Date() },
+    }, { projection: { _id: 1 } });
+    if (active) return null;
+  }
+  return { user, grant };
 }
 
 export async function requireAdminPermission(permission: AdminPermission) {
   const session = await getAdminSession();
   if (!session) {
     const user = await getSessionUser();
+    try {
+      const requestHeaders = await headers();
+      const db = await connectToDatabase();
+      await ensureAdminIndexes(db);
+      await db.collection("admin_security_events").insertOne({
+        kind: "privileged_access_denied",
+        actorId: user?.id ?? null,
+        permission,
+        occurredAt: new Date(),
+        ipAddress: requestHeaders.get("x-real-ip") ?? requestHeaders.get("x-forwarded-for")?.split(",")[0]?.trim() ?? null,
+      });
+    } catch {
+      // Denied access remains denied when security-event storage is unavailable.
+    }
     return {
       session: null,
       response: NextResponse.json(
-        { error: user ? "Administrative access is required." : "Unauthorized." },
-        { status: user ? 403 : 401 },
+        { error: user ? "Administrative access is required or an impersonation session is active." : "Unauthorized." },
+        { status: user ? 423 : 401 },
       ),
     } as const;
   }
   if (!canAccessPermission(session.grant, permission)) {
+    try {
+      const requestHeaders = await headers();
+      const db = await connectToDatabase();
+      await ensureAdminIndexes(db);
+      await db.collection("admin_security_events").insertOne({
+        kind: "privileged_access_denied",
+        actorId: session.user.id,
+        permission,
+        occurredAt: new Date(),
+        ipAddress: requestHeaders.get("x-real-ip") ?? requestHeaders.get("x-forwarded-for")?.split(",")[0]?.trim() ?? null,
+      });
+    } catch {
+      // Permission remains denied when security-event storage is unavailable.
+    }
     return { session: null, response: NextResponse.json({ error: "Permission denied." }, { status: 403 }) } as const;
   }
   return { session, response: null } as const;
@@ -114,13 +172,13 @@ export function checkSameOrigin(request: Request) {
   return null;
 }
 
-export async function enforceAdminRateLimit(input: {
+async function enforceRateLimit(input: {
   userId: string;
   request: Request;
   action: string;
   limit?: number;
   windowMs?: number;
-}) {
+}, admin: boolean) {
   const limit = input.limit ?? 20;
   const windowMs = input.windowMs ?? 60_000;
   const now = Date.now();
@@ -134,9 +192,25 @@ export async function enforceAdminRateLimit(input: {
     { upsert: true, returnDocument: "after" },
   );
   const count = result?.count ?? 0;
-  return count > limit
-    ? NextResponse.json({ error: "Too many administrative actions. Try again shortly." }, { status: 429, headers: { "Retry-After": String(Math.max(1, Math.ceil(((bucket + 1) * windowMs - now) / 1000))) } })
-    : null;
+  if (count <= limit) return null;
+  if (admin) {
+    await db.collection("admin_security_events").insertOne({
+      kind: "admin_rate_limit",
+      actorId: input.userId,
+      action: input.action,
+      occurredAt: new Date(now),
+      requestPath: new URL(input.request.url).pathname,
+    });
+  }
+  return NextResponse.json({ error: "Too many requests. Try again shortly." }, { status: 429, headers: { "Retry-After": String(Math.max(1, Math.ceil(((bucket + 1) * windowMs - now) / 1000))) } });
+}
+
+export function enforceAdminRateLimit(input: { userId: string; request: Request; action: string; limit?: number; windowMs?: number }) {
+  return enforceRateLimit(input, true);
+}
+
+export function enforceUserRateLimit(input: { userId: string; request: Request; action: string; limit?: number; windowMs?: number }) {
+  return enforceRateLimit(input, false);
 }
 
 function safeAuditValue(value: unknown): unknown {
