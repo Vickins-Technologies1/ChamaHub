@@ -7,7 +7,7 @@ import { authClient } from "@/lib/auth-client";
 import { PremiumDashboardShellLoader } from "@/components/dashboard/DashboardLoaders";
 import AdminLteShell from "@/components/dashboard/AdminLteShell";
 import ChamaNotificationMenu from "@/components/chama/ChamaNotificationMenu";
-import { LayoutDashboard, Users, CalendarCheck, ClipboardList, Wallet, Sparkles, Bell, LifeBuoy, KeyRound } from "lucide-react";
+import { LayoutDashboard, Users, CalendarCheck, ClipboardList, Wallet, Sparkles, Bell, LifeBuoy, KeyRound, Receipt } from "lucide-react";
 import { PlatformFeatureProvider } from "@/lib/platform/feature-context";
 
 export default function ChamaLayout({ children }: { children: React.ReactNode }) {
@@ -101,6 +101,7 @@ export default function ChamaLayout({ children }: { children: React.ReactNode })
     { href: "/chama", label: "Overview", icon: LayoutDashboard },
     ...(canViewGroups ? [{ href: "/chama/groups", label: "Groups", icon: Users }] : []),
     ...(featureEnabled("contributions") ? [{ href: "/chama/ledger", label: "Contributions", icon: CalendarCheck }] : []),
+    ...(featureEnabled("contributions") ? [{ href: "/chama/payments", label: "Payments", icon: Receipt }] : []),
     ...(featureEnabled("notifications") ? [{ href: "/chama/notifications", label: "Notifications", icon: Bell }] : []),
     { href: "/chama/support", label: "Support", icon: LifeBuoy },
     { href: "/account/security", label: "Security & devices", icon: KeyRound },

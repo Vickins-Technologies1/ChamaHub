@@ -14,8 +14,11 @@ const FinancialTransactionSchema = new Schema(
     currency: { type: String, required: true, uppercase: true, minlength: 3, maxlength: 3 },
     memberId: { type: Schema.Types.ObjectId, ref: "ChamaMember", default: null },
     roundId: { type: Schema.Types.ObjectId, ref: "ChamaRound", default: null },
+    sourcePaymentId: { type: Schema.Types.ObjectId, ref: "ChamaPayment", default: null },
+    paymentSource: { type: String, enum: ["manual", "mpesa_daraja"], default: null },
     recordedBy: { type: String, required: true },
     reference: { type: String, trim: true, default: "" },
+    normalizedPaymentReference: { type: String, trim: true, uppercase: true, default: null },
     method: { type: String, trim: true, default: "manual" },
     transactionDate: { type: Date, required: true },
     status: {
@@ -50,7 +53,8 @@ FinancialTransactionSchema.index(
 
 const immutableFields = new Set([
   "groupId", "type", "direction", "amountMinor", "legacyAmountMajor", "currency", "memberId",
-  "roundId", "recordedBy", "idempotencyKey", "legacyContributionId", "legacyRoundId", "createdAt",
+  "roundId", "sourcePaymentId", "paymentSource", "recordedBy", "reference", "method", "transactionDate",
+  "evidenceReference", "normalizedPaymentReference", "idempotencyKey", "legacyContributionId", "legacyRoundId", "createdAt",
 ]);
 
 FinancialTransactionSchema.pre("save", function () {
@@ -81,6 +85,14 @@ FinancialTransactionSchema.index(
 FinancialTransactionSchema.index(
   { reversalOf: 1 },
   { unique: true, partialFilterExpression: { reversalOf: { $type: "objectId" } } }
+);
+FinancialTransactionSchema.index(
+  { sourcePaymentId: 1 },
+  { unique: true, partialFilterExpression: { sourcePaymentId: { $type: "objectId" } } }
+);
+FinancialTransactionSchema.index(
+  { groupId: 1, normalizedPaymentReference: 1 },
+  { unique: true, partialFilterExpression: { normalizedPaymentReference: { $type: "string" } } }
 );
 
 export type ChamaFinancialTransaction = InferSchemaType<typeof FinancialTransactionSchema>;

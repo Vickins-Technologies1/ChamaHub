@@ -3,6 +3,8 @@ import ChamaFinancialAuditModel from "@/lib/models/chama-financial-audit";
 import ChamaFinancialTransactionModel from "@/lib/models/chama-financial-transaction";
 import ChamaReconciliationModel from "@/lib/models/chama-reconciliation";
 import ChamaRoundModel from "@/lib/models/chama-round";
+import ChamaPaymentModel from "@/lib/models/chama-payment";
+import ChamaPaymentReceiptModel from "@/lib/models/chama-payment-receipt";
 import { fromMinorUnits } from "@/lib/finance/money";
 
 export const writeFinanceAudit = async (
@@ -12,6 +14,7 @@ export const writeFinanceAudit = async (
     action: string;
     entityType: string;
     entityId: string;
+    idempotencyKey?: string | null;
     reason?: string;
     previousValues?: unknown;
     newValues?: unknown;
@@ -73,6 +76,8 @@ export const ensureFinanceIndexes = async () => {
         ChamaFinancialAuditModel.createIndexes(),
         ChamaRoundModel.createIndexes(),
         ChamaReconciliationModel.createIndexes(),
+        ChamaPaymentModel.createIndexes(),
+        ChamaPaymentReceiptModel.createIndexes(),
       ]);
     })().catch((error) => {
       indexSetup = null;

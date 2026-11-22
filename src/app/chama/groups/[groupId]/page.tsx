@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useParams } from "next/navigation";
+import Link from "next/link";
 import {
   ArrowRight,
   CheckCircle2,
@@ -998,7 +999,7 @@ export default function ChamaGroupPage() {
             </p>
             <h2 className="text-xl font-semibold mt-2">Record contributions</h2>
             </div>
-            {contributionsEnabled && (hasGroupPrivileges || Boolean(myMember)) && (
+            {contributionsEnabled && canRecordForOthers && (
               <button
                 type="button"
                 onClick={() => setContributionOpen(true)}
@@ -1009,10 +1010,11 @@ export default function ChamaGroupPage() {
                 Record contribution
               </button>
             )}
+            {contributionsEnabled && myMember && !canRecordForOthers ? <Link href={`/chama/payments?groupId=${groupId}`} className="inline-flex items-center gap-2 rounded-full border border-[var(--glass-border)] bg-white/70 px-4 py-2 text-sm font-semibold">Submit payment</Link> : null}
           </div>
           {hasGroupPrivileges || myMember ? (
             <p className="text-sm text-[var(--muted)]">
-              {canRecordForOthers ? "Record a member payment for treasury verification." : "Submit your contribution for treasury verification."}
+              {canRecordForOthers ? "Record a member payment for Treasurer verification." : "Submit your payment for Treasurer verification and track it from Payments."}
             </p>
           ) : (
             <p className="text-sm text-[var(--muted)]">

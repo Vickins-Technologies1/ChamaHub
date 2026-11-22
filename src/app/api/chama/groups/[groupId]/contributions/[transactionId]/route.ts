@@ -3,6 +3,7 @@ import { Types } from "mongoose";
 import { connectMongoose } from "@/lib/mongoose";
 import ChamaContributionModel from "@/lib/models/chama-contribution";
 import ChamaFinancialTransactionModel from "@/lib/models/chama-financial-transaction";
+import ChamaPaymentModel from "@/lib/models/chama-payment";
 import {
   ensureFinanceIndexes,
   refreshRoundRecordedTotal,
@@ -10,6 +11,7 @@ import {
   writeFinanceAudit,
 } from "@/lib/finance/service";
 import { getGroupMember, getSessionUser, hasGroupRole, isSiteAdmin } from "@/lib/chama-access";
+import { confirmAndPostPayment, PaymentWorkflowError } from "@/lib/payments/payment-service";
 
 type Params = { params: Promise<{ groupId: string; transactionId: string }> };
 
@@ -36,6 +38,16 @@ export async function PATCH(request: NextRequest, { params }: Params) {
     const reason = String(body.reason ?? "").trim().slice(0, 500);
     if (reason.length < 5) {
       return NextResponse.json({ error: action === "reverse" ? "A reason is required to reverse a payment." : "A verification note is required for the payment audit trail." }, { status: 400 });
+    }
+
+    if (action === "verify" && await ChamaPaymentModel.exists({ _id: transactionId, groupId })) {
+      const result = await confirmAndPostPayment({
+        groupId: new Types.ObjectId(groupId),
+        paymentId: new Types.ObjectId(transactionId),
+        reviewerId: user.id,
+        reason,
+      });
+      return NextResponse.json({ ...result, status: "verified" });
     }
 
     const result = await runInFinancialTransaction(async (session) => {
@@ -123,6 +135,7 @@ export async function PATCH(request: NextRequest, { params }: Params) {
     });
     return NextResponse.json(result);
   } catch (error) {
+    if (error instanceof PaymentWorkflowError) return NextResponse.json({ error: error.message, code: error.code }, { status: error.statusCode });
     if (error instanceof Error && error.message === "TRANSACTION_NOT_FOUND") {
       return NextResponse.json({ error: "Contribution not found." }, { status: 404 });
     }

@@ -6,20 +6,16 @@ import ChamaFinancialTransactionModel from "@/lib/models/chama-financial-transac
 import ChamaGroupModel from "@/lib/models/chama-group";
 import ChamaMemberModel from "@/lib/models/chama-member";
 import ChamaRoundModel from "@/lib/models/chama-round";
-import { fromMinorUnits, toMinorUnits } from "@/lib/finance/money";
-import {
-  ensureFinanceIndexes,
-  isDuplicateKeyError,
-  refreshRoundRecordedTotal,
-  runInFinancialTransaction,
-  writeFinanceAudit,
-} from "@/lib/finance/service";
+import { fromMinorUnits } from "@/lib/finance/money";
+import { ensureFinanceIndexes } from "@/lib/finance/service";
 import {
   getGroupMember,
   getSessionUser,
   hasGroupRole,
   isSiteAdmin,
 } from "@/lib/chama-access";
+import { normalizePaymentMethod, normalizePaymentNotes, normalizePaymentReference, parsePaymentAmount, parsePaymentDate } from "@/lib/payments/payment-rules";
+import { PaymentWorkflowError, submitManualPayment } from "@/lib/payments/payment-service";
 
 type Params = { params: Promise<{ groupId: string }> };
 type Cursor = { createdAt: string; id: string };
@@ -37,16 +33,6 @@ const decodeCursor = (value: string | null): Cursor | null => {
     return null;
   }
 };
-
-const sameContribution = (
-  existing: { roundId?: unknown; memberId?: unknown; amountMinor?: number | null; reference?: string; method?: string },
-  requested: { roundId: string; memberId: string; amountMinor: number; reference: string; method: string }
-) =>
-  String(existing.roundId) === requested.roundId &&
-  String(existing.memberId) === requested.memberId &&
-  existing.amountMinor === requested.amountMinor &&
-  (existing.reference ?? "") === requested.reference &&
-  (existing.method ?? "manual") === requested.method;
 
 const contributionDto = (item: {
   _id: unknown;
@@ -181,20 +167,15 @@ export async function POST(request: NextRequest, { params }: Params) {
     const { groupId } = await params;
     const user = await getSessionUser();
     if (!user) return NextResponse.json({ error: "Unauthorized." }, { status: 401 });
-    if (!Types.ObjectId.isValid(groupId)) {
-      return NextResponse.json({ error: "Invalid group id." }, { status: 400 });
-    }
+    if (!Types.ObjectId.isValid(groupId)) return NextResponse.json({ error: "Invalid group id." }, { status: 400 });
 
     await connectMongoose();
     await ensureFinanceIndexes();
-    const group = await ChamaGroupModel.findById(groupId).lean();
-    if (!group || group.status !== "active") {
-      return NextResponse.json({ error: "Active group not found." }, { status: 404 });
-    }
-
+    const group = await ChamaGroupModel.findOne({ _id: groupId, status: "active" }).lean();
+    if (!group) return NextResponse.json({ error: "Active group not found." }, { status: 404 });
     const requester = await getGroupMember(groupId, user);
     const isAdmin = isSiteAdmin(user);
-    const body = await request.json().catch(() => ({}));
+    const body = await request.json().catch(() => ({})) as Record<string, unknown>;
     const roundId = String(body.roundId ?? "");
     const memberId = String(body.memberId ?? "");
     const idempotencyKey = String(body.idempotencyKey ?? "").trim();
@@ -206,7 +187,9 @@ export async function POST(request: NextRequest, { params }: Params) {
     }
 
     const member = await ChamaMemberModel.findOne({
-      _id: new Types.ObjectId(memberId), groupId: new Types.ObjectId(groupId), status: "active",
+      _id: new Types.ObjectId(memberId),
+      groupId: new Types.ObjectId(groupId),
+      status: "active",
     }).lean();
     if (!member) return NextResponse.json({ error: "Active member not found in this group." }, { status: 404 });
     const isSelf = member.userId === user.id;
@@ -214,112 +197,55 @@ export async function POST(request: NextRequest, { params }: Params) {
       return NextResponse.json({ error: "Access denied." }, { status: 403 });
     }
 
-    const round = await ChamaRoundModel.findOne({ _id: roundId, groupId, status: "open" }).lean();
+    const round = await ChamaRoundModel.findOne({
+      _id: new Types.ObjectId(roundId),
+      groupId: new Types.ObjectId(groupId),
+      status: "open",
+    }).lean();
     if (!round) return NextResponse.json({ error: "Open round not found in this group." }, { status: 404 });
     if (round.snapshotStatus !== "confirmed" || !round.currencySnapshot || !round.memberObligations?.length) {
       return NextResponse.json({ error: "Treasury review is required before recording payments for this round." }, { status: 409 });
     }
-    const currencySnapshot = round.currencySnapshot;
     if (!round.eligibleMemberIds.some((id) => String(id) === memberId)) {
       return NextResponse.json({ error: "This member is not part of the round's locked contribution roster." }, { status: 409 });
     }
 
-    let amountMinor: number;
-    try {
-      amountMinor = toMinorUnits(body.amount, currencySnapshot);
-    } catch (error) {
-      return NextResponse.json({ error: error instanceof Error ? error.message : "Invalid amount." }, { status: 400 });
+    const amountMinor = parsePaymentAmount(body.amount, round.currencySnapshot);
+    const paymentDate = parsePaymentDate(typeof body.paidAt === "string" ? body.paidAt : new Date().toISOString());
+    const normalizedMethod = normalizePaymentMethod(body.method);
+    const { reference, normalized: normalizedReference } = normalizePaymentReference(body.reference, normalizedMethod.method);
+    if (["mpesa", "bank"].includes(normalizedMethod.method) && !normalizedReference) {
+      return NextResponse.json({ error: "Enter the transaction or bank reference for this payment method." }, { status: 400 });
     }
-    const transactionDate = body.paidAt ? new Date(body.paidAt) : new Date();
-    if (Number.isNaN(transactionDate.getTime())) {
-      return NextResponse.json({ error: "Invalid payment date." }, { status: 400 });
-    }
-    const method = String(body.method ?? "manual").trim().slice(0, 50) || "manual";
-    const reference = String(body.reference ?? "").trim().slice(0, 120);
-    const requested = { roundId, memberId, amountMinor, method, reference };
-
-    try {
-      const result = await runInFinancialTransaction(async (session) => {
-        const existing = await ChamaFinancialTransactionModel.findOne({
-          groupId: new Types.ObjectId(groupId), idempotencyKey,
-        }).session(session).lean();
-        if (existing) {
-          if (!sameContribution(existing, requested)) throw new Error("IDEMPOTENCY_KEY_REUSED");
-          return { id: String(existing._id), status: existing.status, replayed: true };
-        }
-
-        const currentRound = await ChamaRoundModel.findOne({
-          _id: new Types.ObjectId(roundId),
-          groupId: new Types.ObjectId(groupId),
-          status: "open",
-          snapshotStatus: "confirmed",
-          currencySnapshot,
-        }).session(session).lean();
-        if (!currentRound || !currentRound.eligibleMemberIds.some((id) => String(id) === memberId)) {
-          throw new Error("ROUND_NOT_OPEN");
-        }
-
-        const [transaction] = await ChamaFinancialTransactionModel.create([{
-          groupId: new Types.ObjectId(groupId),
-          type: "contribution",
-          direction: "in",
-          amountMinor,
-          currency: currencySnapshot,
-          memberId: new Types.ObjectId(memberId),
-          roundId: new Types.ObjectId(roundId),
-          recordedBy: user.id,
-          reference,
-          method,
-          transactionDate,
-          status: "pending_verification",
-          idempotencyKey,
-          description: String(body.description ?? "").trim().slice(0, 500),
-          evidenceReference: String(body.evidenceReference ?? "").trim().slice(0, 500),
-        }], { session });
-
-        await ChamaContributionModel.create([{
-          groupId: new Types.ObjectId(groupId),
-          roundId: new Types.ObjectId(roundId),
-          memberId: new Types.ObjectId(memberId),
-          amount: fromMinorUnits(amountMinor, currencySnapshot),
-          status: "pending",
-          method,
-          reference,
-          paidAt: transactionDate,
-          financialTransactionId: transaction._id,
-        }], { session });
-        await writeFinanceAudit({
-          groupId,
-          actorId: user.id,
-          action: "contribution.recorded",
-          entityType: "financial_transaction",
-          entityId: String(transaction._id),
-          newValues: { type: "contribution", amountMinor, currency: currencySnapshot, status: transaction.status },
-        }, session);
-        await refreshRoundRecordedTotal(new Types.ObjectId(roundId), session);
-        return { id: String(transaction._id), status: transaction.status, replayed: false };
-      });
-      return NextResponse.json(result, { status: result.replayed ? 200 : 201 });
-    } catch (error) {
-      if (error instanceof Error && error.message === "ROUND_NOT_OPEN") {
-        return NextResponse.json({ error: "This round has closed or its roster changed. Reload and try again." }, { status: 409 });
-      }
-      if (error instanceof Error && error.message === "IDEMPOTENCY_KEY_REUSED") {
-        return NextResponse.json({ error: "This idempotency key was already used for a different payment." }, { status: 409 });
-      }
-      if (isDuplicateKeyError(error)) {
-        const existing = await ChamaFinancialTransactionModel.findOne({ groupId, idempotencyKey }).lean();
-        if (existing && sameContribution(existing, requested)) {
-          return NextResponse.json({ id: String(existing._id), status: existing.status, replayed: true }, { status: 200 });
-        }
-        return NextResponse.json({ error: "This idempotency key has already been used." }, { status: 409 });
-      }
-      throw error;
-    }
+    const notes = normalizePaymentNotes(body.description);
+    const result = await submitManualPayment({
+      groupId: new Types.ObjectId(groupId),
+      memberId: new Types.ObjectId(memberId),
+      roundId: new Types.ObjectId(roundId),
+      amountMinor,
+      currency: round.currencySnapshot,
+      paymentDate,
+      method: normalizedMethod.method,
+      methodLabel: normalizedMethod.label,
+      reference,
+      normalizedReference,
+      notes,
+      idempotencyKey,
+      submittedBy: user.id,
+    });
+    return NextResponse.json({ ...result, message: "Payment submitted and awaiting Treasurer verification." }, { status: result.replayed ? 200 : 201 });
   } catch (error) {
+    if (error instanceof PaymentWorkflowError) return NextResponse.json({ error: error.message, code: error.code }, { status: error.statusCode });
     if (error instanceof Error && /Transaction numbers are only allowed|replica set|mongos/i.test(error.message)) {
       return NextResponse.json({ error: "Financial writes require MongoDB replica-set or sharded-cluster transaction support." }, { status: 503 });
     }
-    return NextResponse.json({ error: "Unable to record contribution." }, { status: 500 });
+    if (error instanceof Error && /payment date|amount|reference|payment notes/i.test(error.message)) {
+      return NextResponse.json({ error: error.message }, { status: 400 });
+    }
+    if (typeof error === "object" && error !== null && "code" in error && error.code === 11000) {
+      return NextResponse.json({ error: "That transaction reference or submission has already been recorded." }, { status: 409 });
+    }
+    console.error("Unable to submit contribution payment", error);
+    return NextResponse.json({ error: "Unable to submit this payment for verification." }, { status: 500 });
   }
 }
