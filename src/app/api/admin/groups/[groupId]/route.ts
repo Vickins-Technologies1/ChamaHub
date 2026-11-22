@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { Types } from "mongoose";
+import { getMemberAccountSetupStatus } from "@/lib/member-invitations";
 import connectToDatabase from "@/lib/mongodb";
 import { connectMongoose } from "@/lib/mongoose";
 import ChamaGroupModel from "@/lib/models/chama-group";
@@ -51,9 +52,9 @@ export async function GET(request: Request, context: { params: Promise<{ groupId
     const filter = { groupId: id, status: { $ne: "rejected" } };
     const [total, rows] = await Promise.all([
       collection.countDocuments(filter),
-      collection.find(filter, { projection: { userId: 1, name: 1, email: 1, phone: 1, role: 1, status: 1, invitedBy: 1, joinedAt: 1 } }).sort({ joinedAt: -1, _id: -1 }).skip(skip).limit(pageSize).toArray(),
+      collection.find(filter, { projection: { userId: 1, name: 1, email: 1, phone: 1, role: 1, status: 1, invitedBy: 1, joinedAt: 1, accountSetupStatus: 1, accountSetupExpiresAt: 1 } }).sort({ joinedAt: -1, _id: -1 }).skip(skip).limit(pageSize).toArray(),
     ]);
-    return NextResponse.json({ items: rows.map((row) => ({ id: String(row._id), ...row, _id: undefined })), total, page, pageSize });
+    return NextResponse.json({ items: rows.map((row) => ({ id: String(row._id), ...row, accountSetupStatus: getMemberAccountSetupStatus(row as { userId?: unknown; accountSetupStatus?: string | null; accountSetupExpiresAt?: unknown; accountSetupAttemptExpiresAt?: unknown }), _id: undefined })), total, page, pageSize });
   }
   if (["contributions", "payouts", "financial-records"].includes(tab)) {
     const filter: Record<string, unknown> = { groupId: id };

@@ -48,6 +48,7 @@ type Member = {
   role: string;
   status: string;
   joinedAt?: string;
+  accountSetupStatus?: string;
 };
 
 type MeetingMinute = {
@@ -74,6 +75,7 @@ const textAreaClass = `${inputClass} min-h-[120px] resize-none`;
 export default function SecretaryPanelPage() {
   const { data: session } = authClient.useSession();
   const notificationsEnabled = usePlatformFeature("notifications");
+  const invitationsEnabled = usePlatformFeature("group_invitations");
   const [groups, setGroups] = useState<GroupSummary[]>([]);
   const [selectedGroup, setSelectedGroup] = useState("");
   const [groupDetail, setGroupDetail] = useState<GroupDetail | null>(null);
@@ -83,6 +85,7 @@ export default function SecretaryPanelPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
+  const [setupLink, setSetupLink] = useState("");
   const [pending, setPending] = useState<Record<string, boolean>>({});
 
   const [inviteOpen, setInviteOpen] = useState(false);
@@ -189,8 +192,9 @@ export default function SecretaryPanelPage() {
   const handleInviteMember = async () => {
     setMessage("");
     setError("");
-    if (!inviteForm.email && !inviteForm.phone) {
-      setError("Provide an email or phone number.");
+    setSetupLink("");
+    if (!inviteForm.email.trim()) {
+      setError("Enter the member's email to create and send a secure account setup link.");
       return;
     }
     const pendingKey = "invite-member";
@@ -203,12 +207,44 @@ export default function SecretaryPanelPage() {
       });
       const data = await response.json();
       if (!response.ok) throw new Error(data?.error || "Unable to invite member.");
-      setMessage("Invite sent. Member is pending approval.");
+      setSetupLink(typeof data.setupLink === "string" ? data.setupLink : "");
+      setMessage(data.delivery === "failed"
+        ? "Member record saved, but email could not be sent. Copy the secure setup link below and send it to the member."
+        : data.alreadySent
+          ? "This member already has an active invitation. Use Resend / copy link in the roster."
+          : data.accountSetupStatus === "account_activated"
+            ? "This member already has an activated account. No duplicate account was created."
+            : "Member added. The setup invitation was sent; membership is pending approval.");
       setInviteForm({ name: "", email: "", phone: "" });
       setInviteOpen(false);
       await loadGroupDetail(selectedGroup);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Unable to invite member.");
+    } finally {
+      setPendingKey(pendingKey, false);
+    }
+  };
+
+  const handleResendInvitation = async (memberId: string) => {
+    if (!selectedGroup) return;
+    const pendingKey = `member-invitation:${memberId}`;
+    setPendingKey(pendingKey, true);
+    setError("");
+    setMessage("");
+    setSetupLink("");
+    try {
+      const response = await fetch(`/api/chama/groups/${selectedGroup}/members/${memberId}/invitation`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "resend" }),
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data?.error || "Unable to resend setup link.");
+      setSetupLink(typeof data.setupLink === "string" ? data.setupLink : "");
+      setMessage(data.delivery === "failed" ? "A new link was generated, but email could not be sent. Copy it below." : data.setupLink ? "A new setup link was sent. The previous link has been disabled." : "This member is already activated or is completing setup.");
+      await loadGroupDetail(selectedGroup);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Unable to resend setup link.");
     } finally {
       setPendingKey(pendingKey, false);
     }
@@ -376,6 +412,7 @@ export default function SecretaryPanelPage() {
 
       {error && <div className="glass-panel p-4 text-sm text-rose-500">{error}</div>}
       {message && <div className="glass-panel p-4 text-sm">{message}</div>}
+      {setupLink && <div className="glass-panel space-y-3 p-4"><label className="block text-xs font-semibold">Member account setup link<input readOnly value={setupLink} className="glass-input mt-2 w-full" onFocus={(event) => event.currentTarget.select()} /></label><button type="button" onClick={() => { if (navigator.clipboard?.writeText) void navigator.clipboard.writeText(setupLink).then(() => setMessage("Setup link copied. Send it only to the invited member.")).catch(() => window.prompt("Copy the secure setup link", setupLink)); else window.prompt("Copy the secure setup link", setupLink); }} className="rounded-full border border-[var(--glass-border)] px-4 py-2 text-xs font-semibold">Copy setup link</button></div>}
 
       <section className="grid grid-cols-1 md:grid-cols-3 gap-4">
         {[
@@ -432,8 +469,10 @@ export default function SecretaryPanelPage() {
                       <p className="text-xs text-[var(--muted)] mt-1">
                         {member.email || member.phone || "No contact"}
                       </p>
+                      <p className="mt-1 text-xs font-medium text-[var(--muted)]">{member.accountSetupStatus === "activation_pending" ? "Email verification pending" : member.userId || member.accountSetupStatus === "account_activated" ? "Account activated" : member.accountSetupStatus === "setup_in_progress" ? "Account setup in progress" : member.accountSetupStatus === "invitation_sent" ? "Invitation sent" : member.accountSetupStatus === "invitation_expired" ? "Invitation expired" : member.accountSetupStatus === "invitation_revoked" ? "Invitation revoked" : "Not invited"}</p>
                     </div>
                     <div className="flex flex-wrap gap-2">
+                      {!member.userId && member.accountSetupStatus !== "activation_pending" && member.accountSetupStatus !== "setup_in_progress" && member.status !== "rejected" && member.email ? <button type="button" onClick={() => void handleResendInvitation(member.id)} disabled={!invitationsEnabled || pending[`member-invitation:${member.id}`]} className="rounded-full border border-[var(--glass-border)] px-3 py-1 text-xs font-semibold disabled:opacity-50">{pending[`member-invitation:${member.id}`] ? "Sending…" : member.accountSetupStatus === "not_invited" ? "Send setup link" : "Resend / copy link"}</button> : null}
                       <button
                         type="button"
                         onClick={() => handleUpdateMember(member.id, { status: "active" })}
@@ -470,7 +509,7 @@ export default function SecretaryPanelPage() {
               <p className="text-xs uppercase tracking-[0.3em] text-[var(--muted)]">Invite</p>
               <h2 className="text-xl font-semibold mt-2">Send a member invite</h2>
               <p className="text-sm text-[var(--muted)] mt-2">
-                Invite members by email or phone in a modal (no form clutter on the dashboard).
+                Add the member and send a one-time setup link to their email address.
               </p>
             </div>
             <button
@@ -653,6 +692,8 @@ export default function SecretaryPanelPage() {
             <input
               className={inputClass}
               placeholder="Email"
+              type="email"
+              required
               value={inviteForm.email}
               onChange={(event) =>
                 setInviteForm((prev) => ({ ...prev, email: event.target.value }))

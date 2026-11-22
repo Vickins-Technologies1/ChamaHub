@@ -52,7 +52,7 @@ export default function AdminGroupDetail({ groupId }: { groupId: string }) {
 
   useEffect(() => { const controller = new AbortController(); void load(controller.signal); return () => controller.abort(); }, [load]);
   const group = result?.group;
-  const columns = tab === "members" ? ["Member", "Email", "Group role", "Status", "Joined"] : tab === "meetings" ? ["Meeting", "Scheduled", "Attendees", "Attendance captured"] : tab === "activity" ? ["Time", "Action", "Record", "Actor", "Reason"] : ["Date", "Type", "Amount", "Status", "Reference"];
+  const columns = tab === "members" ? ["Member", "Email", "Group role", "Status", "Account setup", "Joined"] : tab === "meetings" ? ["Meeting", "Scheduled", "Attendees", "Attendance captured"] : tab === "activity" ? ["Time", "Action", "Record", "Actor", "Reason"] : ["Date", "Type", "Amount", "Status", "Reference"];
   const items = result?.items ?? [];
   const pageCount = Math.max(1, Math.ceil((result?.total ?? 0) / 25));
 
@@ -77,7 +77,7 @@ export default function AdminGroupDetail({ groupId }: { groupId: string }) {
           </div> : null}
 
           {tab !== "overview" && tab !== "settings" && !loading ? items.length ? <div className="overflow-x-auto"><table className="dashboard-table min-w-[760px] w-full text-left"><thead><tr>{columns.map((column) => <th key={column}>{column}</th>)}</tr></thead><tbody>{items.map((row, index) => <tr key={String(row.id ?? index)}>
-            {tab === "members" ? <><td><span className="font-medium">{text(row.name)}</span><small className="mt-1 block text-[10px] text-[var(--muted)]">{text(row.id)}</small></td><td>{text(row.email)}{row.phone ? <small className="mt-1 block text-[10px] text-[var(--muted)]">{text(row.phone)}</small> : null}</td><td className="capitalize">{text(row.role)}</td><td>{text(row.status)}</td><td>{text(row.joinedAt)}</td></> : null}
+            {tab === "members" ? <><td><span className="font-medium">{text(row.name)}</span><small className="mt-1 block text-[10px] text-[var(--muted)]">{text(row.id)}</small></td><td>{text(row.email)}{row.phone ? <small className="mt-1 block text-[10px] text-[var(--muted)]">{text(row.phone)}</small> : null}</td><td className="capitalize">{text(row.role)}</td><td>{text(row.status)}</td><td>{String(row.accountSetupStatus ?? "not_invited").replaceAll("_", " ")}</td><td>{text(row.joinedAt)}</td></> : null}
             {tab === "meetings" ? <><td>{text(row.title)}</td><td>{text(row.scheduledFor)}</td><td>{text(row.participantCount)}</td><td>{text(row.attendanceCapturedAt)}</td></> : null}
             {tab === "activity" ? <><td>{text(row.occurredAt)}</td><td>{text(row.action)}</td><td>{text(row.entityType)} · {text(row.entityId)}</td><td>{text(row.actorId)}</td><td>{text(row.reason)}</td></> : null}
             {["contributions", "payouts", "financial-records"].includes(tab) ? <><td>{text(row.transactionDate)}</td><td className="capitalize">{text(row.type)} · {text(row.direction)}</td><td>{amount(row)}</td><td>{text(row.status)}</td><td>{text(row.reference)}</td></> : null}

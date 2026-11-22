@@ -45,6 +45,8 @@ type Member = {
   role: string;
   status: string;
   joinedAt?: string;
+  accountSetupStatus?: string;
+  accountSetupExpiresAt?: string | null;
   contributionTotal: number;
 };
 
@@ -122,6 +124,7 @@ export default function ChamaGroupPage() {
   const [stats, setStats] = useState<{ membersCount: number; potAmount: number } | null>(null);
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
+  const [setupLink, setSetupLink] = useState("");
   const [initialLoading, setInitialLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [pending, setPending] = useState<Record<string, boolean>>({});
@@ -304,8 +307,8 @@ export default function ChamaGroupPage() {
     if (!invitationsEnabled) { setError("Group invitations are temporarily disabled by the platform administrator."); return; }
     setMessage("");
     setError("");
-    if (!memberForm.email && !memberForm.phone) {
-      setError("Provide an email or phone number.");
+    if (!memberForm.email.trim()) {
+      setError("Enter the member's email to create and send a secure account setup link.");
       return;
     }
 
@@ -319,12 +322,66 @@ export default function ChamaGroupPage() {
       });
       const data = await response.json();
       if (!response.ok) throw new Error(data?.error || "Unable to invite member.");
-      setMessage("Invite sent. Member is pending approval.");
+      setSetupLink(typeof data.setupLink === "string" ? data.setupLink : "");
+      setMessage(data.delivery === "failed"
+        ? "Member record saved, but email could not be sent. Copy the secure setup link below and send it to the member."
+        : data.alreadySent
+          ? "This member already has an active invitation. Use Resend / copy link in the member list to create another link."
+          : data.accountSetupStatus === "account_activated"
+            ? "This member record already has an activated account. No duplicate account was created."
+            : "Member added. The setup invitation was sent; membership is pending approval.");
       setMemberForm({ name: "", email: "", phone: "", role: "member" });
       setInviteOpen(false);
       await loadGroup({ silent: true });
     } catch (err) {
       setError(err instanceof Error ? err.message : "Unable to invite member.");
+    } finally {
+      setPendingKey(pendingKey, false);
+    }
+  };
+
+  const handleResendMemberInvitation = async (member: Member) => {
+    setMessage("");
+    setError("");
+    const pendingKey = `member-invitation:${member.id}`;
+    setPendingKey(pendingKey, true);
+    try {
+      const response = await fetch(`/api/chama/groups/${groupId}/members/${member.id}/invitation`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "resend" }),
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data?.error || "Unable to resend setup link.");
+      setSetupLink(typeof data.setupLink === "string" ? data.setupLink : "");
+      setMessage(data.delivery === "failed"
+        ? "A new setup link was generated, but email could not be sent. Copy it below and send it to the member."
+        : data.setupLink
+          ? "A new setup link was sent. The previous link has been disabled; copy this one if you need to send it another way."
+          : "This member already has an activated account or is completing setup.");
+      await loadGroup({ silent: true });
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Unable to resend setup link.");
+    } finally {
+      setPendingKey(pendingKey, false);
+    }
+  };
+
+  const revokeMemberInvitation = async (memberId: string) => {
+    if (!window.confirm("Revoke this setup link? The member will need a new invitation.")) return;
+    const pendingKey = `member-invitation:${memberId}`;
+    setPendingKey(pendingKey, true);
+    setError("");
+    setMessage("");
+    try {
+      const response = await fetch(`/api/chama/groups/${groupId}/members/${memberId}/invitation`, { method: "DELETE" });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data?.error || "Unable to revoke invitation.");
+      setMessage("The setup invitation was revoked.");
+      setSetupLink("");
+      await loadGroup({ silent: true });
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Unable to revoke invitation.");
     } finally {
       setPendingKey(pendingKey, false);
     }
@@ -560,9 +617,7 @@ export default function ChamaGroupPage() {
   const isSiteAdmin = sessionRoleList.includes("admin");
   const isModerator = sessionRoleList.includes("moderator");
   const myMember = members.find(
-    (member) =>
-      member.userId === session?.user?.id ||
-      (session?.user?.email && member.email === session.user.email.toLowerCase())
+    (member) => member.userId === session?.user?.id
   );
   const currentRound = rounds.find((round) => round.status === "open");
   const canManageFinance = isSiteAdmin || ["admin", "treasurer"].includes(myMember?.role ?? "");
@@ -667,6 +722,7 @@ export default function ChamaGroupPage() {
 
       {error && <div className="glass-panel p-4 text-sm text-rose-500">{error}</div>}
       {message && <div className="glass-panel p-4 text-sm">{message}</div>}
+      {setupLink && <div className="glass-panel space-y-3 p-4"><label className="block text-xs font-semibold">Member account setup link<input readOnly value={setupLink} className="glass-input mt-2 w-full" onFocus={(event) => event.currentTarget.select()} /></label><button type="button" onClick={() => void navigator.clipboard.writeText(setupLink).then(() => setMessage("Setup link copied. Send it only to the invited member.")).catch(() => window.prompt("Copy the secure member setup link", setupLink))} className="rounded-full border border-[var(--glass-border)] px-4 py-2 text-xs font-semibold">Copy setup link</button></div>}
       {refreshing && (
         <div className="glass-panel p-3 text-xs text-[var(--muted)] inline-flex items-center gap-2">
           <Loader2 size={14} className="animate-spin" />
@@ -853,13 +909,18 @@ export default function ChamaGroupPage() {
                       {member.email || member.phone || "No contact"} •{" "}
                       {member.status}
                     </p>
+                    <span className={`mt-2 inline-flex rounded-full px-2 py-1 text-[10px] font-semibold ${member.accountSetupStatus === "account_activated" || (member.userId && member.accountSetupStatus !== "activation_pending") ? "bg-emerald-100 text-emerald-700" : "bg-amber-100 text-amber-800"}`}>
+                      {member.accountSetupStatus === "activation_pending" ? "Email verification pending" : member.userId || member.accountSetupStatus === "account_activated" ? "Account activated" : member.accountSetupStatus === "setup_in_progress" ? "Account setup in progress" : member.accountSetupStatus === "invitation_sent" ? "Invitation sent" : member.accountSetupStatus === "invitation_expired" ? "Invitation expired" : member.accountSetupStatus === "invitation_revoked" ? "Invitation revoked" : "Not invited"}
+                    </span>
                     {member.userId && (
                       <span className="inline-flex items-center mt-2 text-[10px] uppercase tracking-[0.2em] bg-emerald-100 text-emerald-600 px-2 py-1 rounded-full">
-                        Invite accepted
+                        Verified account
                       </span>
                     )}
                   </div>
                     <div className="flex flex-wrap gap-2">
+                      {!member.userId && member.accountSetupStatus !== "activation_pending" && member.accountSetupStatus !== "setup_in_progress" && member.status !== "rejected" && member.email ? <button type="button" onClick={() => void handleResendMemberInvitation(member)} disabled={!invitationsEnabled || pending[`member-invitation:${member.id}`]} className="rounded-full border border-[var(--glass-border)] px-3 py-1 text-xs font-semibold disabled:opacity-50">{pending[`member-invitation:${member.id}`] ? "Sending…" : member.accountSetupStatus === "not_invited" ? "Send setup link" : "Resend / copy link"}</button> : null}
+                      {member.accountSetupStatus === "invitation_sent" && !member.userId ? <button type="button" onClick={() => void revokeMemberInvitation(member.id)} disabled={pending[`member-invitation:${member.id}`]} className="rounded-full bg-rose-100 px-3 py-1 text-xs font-semibold text-rose-700 disabled:opacity-50">Revoke link</button> : null}
                       <select
                         disabled={pending[`member-role:${member.id}`]}
                         className="text-xs border border-[var(--glass-border)] rounded-full px-2 py-1 bg-white/70 disabled:opacity-70"
@@ -1207,6 +1268,8 @@ export default function ChamaGroupPage() {
               className={inputClass}
               placeholder="Email"
               value={memberForm.email}
+              type="email"
+              required
               onChange={(event) => setMemberForm((prev) => ({ ...prev, email: event.target.value }))}
             />
             <input

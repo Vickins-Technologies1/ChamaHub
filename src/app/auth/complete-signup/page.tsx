@@ -69,11 +69,16 @@ function CompleteSignupContent() {
   const loginHref = `/member-login?callbackUrl=${encodeURIComponent(`/auth/complete-signup?role=${role}`)}`;
 
   const finishSignup = useCallback(async (body: ModeratorSetup | Record<string, never>) => {
+    if (role !== "moderator") {
+      setState("error");
+      setError("Members can finish account setup only through their secure invitation link.");
+      return;
+    }
     setState("finishing");
     setError("");
     setBusy(true);
     try {
-      const endpoint = role === "moderator" ? "/api/chama/moderator-signup" : "/api/chama/member-signup";
+      const endpoint = "/api/chama/moderator-signup";
       const response = await fetch(endpoint, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
       if (response.status === 401) {
         setState("signed-out");
@@ -92,11 +97,7 @@ function CompleteSignupContent() {
           setError(data.error ?? "Group setup is already in progress. Wait a moment, then try again.");
           return;
         }
-        if (response.status === 409 && role === "member") {
-          setError("This account already has moderator access. Sign in to continue.");
-        } else {
-          setError("We couldn't finish setting up your account. Your details are still here. Please try again.");
-        }
+        setError("We couldn't finish setting up your account. Your details are still here. Please try again.");
         setState("error");
         return;
       }
@@ -125,6 +126,7 @@ function CompleteSignupContent() {
   useEffect(() => {
     if (isPending || handled.current) return;
     handled.current = true;
+    if (role !== "moderator") return;
     const resolve = async () => {
       let activeUser = session?.user;
       let signedIn = Boolean(activeUser);
@@ -207,6 +209,10 @@ function CompleteSignupContent() {
     await finishSignup(groupSetup);
   };
 
+  if (role !== "moderator") {
+    return <main className="flex min-h-screen items-center justify-center p-6"><section className="glass-panel w-full max-w-md p-8 text-center"><h1 className="text-xl font-semibold">Member invitation required</h1><p className="mt-3 text-sm text-[var(--muted)]">Member accounts are set up from a personal invitation sent by a group moderator.</p><a className="mt-5 inline-block font-semibold text-[var(--button-bg)] underline" href="/member-login">Go to member login</a></section></main>;
+  }
+
   if (state === "checking" || state === "finishing") {
     return <main className="flex min-h-screen items-center justify-center p-6"><div className="glass-panel max-w-md p-8 text-center" role="status"><LoaderCircle className="mx-auto mb-4 animate-spin text-[var(--button-bg)]" size={28} /><h1 className="text-xl font-semibold">{state === "checking" && session?.user?.emailVerified ? "Your email is verified" : state === "checking" ? "Checking your account…" : "Finishing your secure setup…"}</h1><p className="mt-3 text-sm text-[var(--muted)]">{state === "checking" ? "This usually takes a few seconds." : "Please keep this page open."}</p>{sessionDelayed && state === "checking" ? <><p className="mt-4 text-sm text-rose-700">We could not confirm your sign-in yet.</p><button type="button" className="mt-4 font-semibold text-[var(--button-bg)] underline" onClick={() => { handled.current = false; setSessionDelayed(false); setState("checking"); setSessionRetry((value) => value + 1); }}>Try again</button></> : null}</div></main>;
   }
@@ -231,7 +237,7 @@ function CompleteSignupContent() {
     return <main className="flex min-h-screen items-center justify-center p-6"><section className="glass-panel w-full max-w-md p-8"><h1 className="text-xl font-semibold">Email verification needs attention</h1><p className="mt-3 text-sm text-rose-700">{verificationMessage(verificationError)}</p><form onSubmit={(event) => { event.preventDefault(); void resendVerification(); }} className="mt-5 space-y-3"><label className="block space-y-1.5 text-sm font-medium">Email address<input className="glass-input w-full" type="email" autoComplete="email" value={email} onChange={(event) => setEmail(event.target.value)} required maxLength={254} /></label>{error ? <p role="alert" className="text-sm text-rose-700">{error}</p> : null}{message ? <p role="status" className="text-sm text-emerald-800">{message}</p> : null}<button disabled={busy} className="w-full rounded-full bg-[var(--button-bg)] px-5 py-3 text-sm font-semibold text-white disabled:opacity-60">{busy ? "Sending…" : "Resend verification email"}</button></form><p className="mt-5 text-center text-sm text-[var(--muted)]">Already verified? <a className="font-semibold text-[var(--button-bg)] underline" href={loginHref}>Sign in</a></p></section></main>;
   }
 
-  return <main className="flex min-h-screen items-center justify-center p-6"><section className="glass-panel w-full max-w-md p-8"><h1 className="text-center text-xl font-semibold">{state === "signed-out" ? (verificationSucceeded ? "Your email is verified" : "Continue to your account") : "Setup needs another try"}</h1><p className="mt-3 text-center text-sm text-[var(--muted)]">{error || (state === "signed-out" ? (verificationSucceeded ? "Sign in to continue on this browser." : "Sign in to continue. If you are unsure whether your email was verified, request a fresh link below.") : "Your account is safe. You can retry setup without creating another account.")}</p>{state === "error" && role === "member" ? <button type="button" disabled={busy} onClick={() => void finishSignup({})} className="mt-5 w-full rounded-full bg-[var(--button-bg)] px-5 py-3 text-sm font-semibold text-white disabled:opacity-60">Try again</button> : null}{state === "signed-out" && !verificationSucceeded ? <form onSubmit={(event) => { event.preventDefault(); void resendVerification(); }} className="mt-5 space-y-3"><label className="block space-y-1.5 text-left text-sm font-medium">Email address<input className="glass-input w-full" type="email" autoComplete="email" value={email} onChange={(event) => setEmail(event.target.value)} required maxLength={254} /></label>{error ? <p role="alert" className="text-sm text-rose-700">{error}</p> : null}{message ? <p role="status" className="text-sm text-emerald-800">{message}</p> : null}<button disabled={busy} className="w-full rounded-full border border-[var(--glass-border)] px-5 py-3 text-sm font-semibold text-[var(--button-bg)] disabled:opacity-60">{busy ? "Sending…" : "Resend verification email"}</button></form> : null}<a className="mt-5 block text-center font-semibold text-[var(--button-bg)] underline" href={loginHref}>Sign in to continue</a></section></main>;
+  return <main className="flex min-h-screen items-center justify-center p-6"><section className="glass-panel w-full max-w-md p-8"><h1 className="text-center text-xl font-semibold">{state === "signed-out" ? (verificationSucceeded ? "Your email is verified" : "Continue to your account") : "Setup needs another try"}</h1><p className="mt-3 text-center text-sm text-[var(--muted)]">{error || (state === "signed-out" ? (verificationSucceeded ? "Sign in to continue on this browser." : "Sign in to continue. If you are unsure whether your email was verified, request a fresh link below.") : "Your account is safe. You can retry setup without creating another account.")}</p>{state === "signed-out" && !verificationSucceeded ? <form onSubmit={(event) => { event.preventDefault(); void resendVerification(); }} className="mt-5 space-y-3"><label className="block space-y-1.5 text-left text-sm font-medium">Email address<input className="glass-input w-full" type="email" autoComplete="email" value={email} onChange={(event) => setEmail(event.target.value)} required maxLength={254} /></label>{error ? <p role="alert" className="text-sm text-rose-700">{error}</p> : null}{message ? <p role="status" className="text-sm text-emerald-800">{message}</p> : null}<button disabled={busy} className="w-full rounded-full border border-[var(--glass-border)] px-5 py-3 text-sm font-semibold text-[var(--button-bg)] disabled:opacity-60">{busy ? "Sending…" : "Resend verification email"}</button></form> : null}<a className="mt-5 block text-center font-semibold text-[var(--button-bg)] underline" href={loginHref}>Sign in to continue</a></section></main>;
 }
 
 export default function CompleteSignupPage() {

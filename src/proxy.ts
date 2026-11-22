@@ -7,7 +7,7 @@ import { featureForRequest, isMaintenanceRouteAffected } from "@/lib/platform/po
 let maintenanceCache: { value: Record<string, unknown> | null; expiresAt: number } | null = null;
 let flagCache = new Map<string, { enabled: boolean; expiresAt: number }>();
 
-const authRoutes = ["/auth", "/member-login", "/member-signup", "/moderator-login", "/moderator-signup", "/forgot-password", "/maintenance"];
+const authRoutes = ["/auth", "/member-login", "/member-setup", "/moderator-login", "/moderator-signup", "/forgot-password", "/maintenance"];
 const alwaysAvailablePrefixes = ["/admin", "/api/admin", "/api/jobs", "/api/webhooks", "/api/payments/callback"];
 
 function isPrefix(path: string, prefix: string) {
@@ -44,6 +44,7 @@ async function isPlatformAdmin(userId: string | null) {
 
 export async function proxy(request: NextRequest) {
   const path = request.nextUrl.pathname;
+  if (isPrefix(path, "/member-signup")) return NextResponse.redirect(new URL("/member-login", request.url), 308);
   const isAuthRoute = authRoutes.some((prefix) => isPrefix(path, prefix));
   const alwaysAvailable = alwaysAvailablePrefixes.some((prefix) => isPrefix(path, prefix)) || /\/(?:callback|webhook)(?:\/|$)/i.test(path);
   const feature = featureForRequest(path, request.method);

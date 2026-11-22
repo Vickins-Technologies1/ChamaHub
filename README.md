@@ -22,6 +22,14 @@ Production website: https://chamapulse.vickinstechnologies.com/
 
 Set `MONGODB_URI` to the MongoDB cluster that contains existing group data. Keep the current `CHAMAHUB_MONGODB_DB` value so group, financial, and account profile collections remain available. Set `BETTER_AUTH_SECRET` to a unique random value with at least 32 characters, `BETTER_AUTH_URL` to the canonical app URL, and `EMAIL_USER`/`EMAIL_PASS` for verification and recovery mail. In production, use the public HTTPS URL for `BETTER_AUTH_URL` and `NEXT_PUBLIC_SITE_URL`. Local development uses `http://localhost:3000`.
 
+### Member account setup
+
+Members cannot register from a public signup page or the Better Auth signup endpoint. A group administrator, treasurer, or secretary adds the member using the invited email address; ChamaPulse creates one member record, sends a seven-day, single-use setup link, and lets the moderator copy the link if email delivery is unavailable. The bearer token is generated with cryptographic randomness, stored only as a SHA-256 hash, and carried in the URL fragment so it is not sent in the initial page request or referrer. Resending replaces and invalidates the previous link; moderators can revoke a live link.
+
+Members create their password through the existing Better Auth credential and Argon2id password-hashing flow. The invited email address is fixed to the member record and must be verified before sign-in. Existing ChamaPulse accounts can be linked only from a verified session with the invited email. Member access uses the explicit member `userId`; matching an email by itself no longer grants group membership. Existing members without a linked account should be sent an invitation from their group member list. The member list shows invitation, verification, and activation state.
+
+Configure the public HTTPS `BETTER_AUTH_URL` (or `NEXT_PUBLIC_SITE_URL`) and SMTP settings before issuing production invitations. An email delivery error leaves the invitation available for the moderator to copy and send securely. Do not send setup links to anyone other than the member named on the invitation.
+
 ### Authentication migration and cutover
 
 Better Auth stores identities in `auth_user`, credentials in `auth_account`, and sessions in `auth_session`. It uses the existing MongoDB client and keeps each ChamaPulse account `id` as the authentication user ID. Group, ledger, and other business collections are not rewritten. New registrations require email verification, and migrated users can use the password recovery flow to set a new password. Password hashes from the previous provider are never copied or assumed to be portable.

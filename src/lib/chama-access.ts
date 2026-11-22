@@ -52,14 +52,10 @@ export const isMemberUser = (user: SessionUser | null) => {
 
 export const getGroupMember = async (groupId: string, user: SessionUser) => {
   if (!Types.ObjectId.isValid(groupId)) return null;
-  const orConditions: Record<string, unknown>[] = [{ userId: user.id }];
-  if (user.email) {
-    orConditions.push({ email: user.email.toLowerCase() });
-  }
   const query = {
     groupId: new Types.ObjectId(groupId),
     status: "active",
-    $or: orConditions,
+    userId: user.id,
   };
   return (await ChamaMemberModel.findOne(query).lean()) as
     | {
@@ -78,21 +74,4 @@ export const hasGroupRole = (
 ) => {
   if (!member?.role || member.status !== "active") return false;
   return roles.includes(member.role as "admin" | "treasurer" | "secretary");
-};
-
-export const linkMemberToUser = async (user: SessionUser | null) => {
-  if (!user?.id || !user.email) return;
-  try {
-    await connectMongoose();
-    const normalizedEmail = user.email.toLowerCase();
-    await ChamaMemberModel.updateMany(
-      {
-        email: normalizedEmail,
-        $or: [{ userId: { $exists: false } }, { userId: null }, { userId: "" }],
-      },
-      { $set: { userId: user.id } }
-    );
-  } catch {
-    // Ignore linking failures to avoid breaking requests.
-  }
 };

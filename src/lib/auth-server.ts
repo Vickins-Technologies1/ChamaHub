@@ -109,7 +109,18 @@ async function createAuth() {
           html: `<p>Verify your email address to finish setting up your ChamaPulse account.</p><p><a href="${safeUrl}">Verify email address</a></p><p>This link expires in one hour. If you did not create an account, you can ignore this email.</p>`,
         });
       },
-      afterEmailVerification: async (user) => recordAuthEvent({ type: "email.verified", userId: user.id }),
+      afterEmailVerification: async (user) => {
+        await recordAuthEvent({ type: "email.verified", userId: user.id });
+        try {
+          const database = await connectToDatabase();
+          await database.collection("chamamembers").updateMany(
+            { userId: user.id, accountSetupStatus: "activation_pending_verification" },
+            { $set: { accountSetupStatus: "account_activated", updatedAt: new Date() } },
+          );
+        } catch (error) {
+          console.error("Unable to update member invitation activation status", error);
+        }
+      },
     },
     rateLimit: {
       enabled: true,

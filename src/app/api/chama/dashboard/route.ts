@@ -5,7 +5,7 @@ import ChamaGroupModel from "@/lib/models/chama-group";
 import ChamaMemberModel from "@/lib/models/chama-member";
 import ChamaRoundModel from "@/lib/models/chama-round";
 import ChamaFinancialTransactionModel from "@/lib/models/chama-financial-transaction";
-import { getSessionUser, linkMemberToUser } from "@/lib/chama-access";
+import { getSessionUser } from "@/lib/chama-access";
 import { fromMinorUnits } from "@/lib/finance/money";
 import { getContributionStatus, getOutstandingMinor } from "@/lib/finance/ledger";
 
@@ -16,16 +16,10 @@ export async function GET() {
       return NextResponse.json({ error: "Unauthorized." }, { status: 401 });
     }
 
-    await linkMemberToUser(user);
     await connectMongoose();
 
-    const orConditions: Record<string, unknown>[] = [{ userId: user.id }];
-    if (user.email) {
-      orConditions.push({ email: user.email.toLowerCase() });
-    }
-
     const members = await ChamaMemberModel.find({
-      $or: orConditions,
+      userId: user.id,
       status: "active",
     }).lean();
 
@@ -104,9 +98,7 @@ export async function GET() {
       const openRound = rounds.find((round) => String(round.groupId) === groupId);
       const groupMembers = members.filter((member) => String(member.groupId) === groupId);
       const myMember = groupMembers.find(
-        (member) =>
-          member.userId === user.id ||
-          (user.email && member.email === user.email.toLowerCase())
+        (member) => member.userId === user.id
       );
       const obligation = openRound?.memberObligations?.find((item) => String(item.memberId) === String(myMember?._id));
       const payment = openRound && myMember

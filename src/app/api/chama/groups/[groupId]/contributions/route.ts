@@ -209,7 +209,7 @@ export async function POST(request: NextRequest, { params }: Params) {
       _id: new Types.ObjectId(memberId), groupId: new Types.ObjectId(groupId), status: "active",
     }).lean();
     if (!member) return NextResponse.json({ error: "Active member not found in this group." }, { status: 404 });
-    const isSelf = member.userId === user.id || Boolean(user.email && member.email === user.email.toLowerCase());
+    const isSelf = member.userId === user.id;
     if (!isAdmin && !hasGroupRole(requester, ["admin", "treasurer"]) && !isSelf) {
       return NextResponse.json({ error: "Access denied." }, { status: 403 });
     }

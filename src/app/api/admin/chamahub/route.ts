@@ -14,7 +14,7 @@ import {
   writeAdminAudit,
 } from "@/lib/admin/access";
 import { fromMinorUnits } from "@/lib/finance/money";
-import transporter from "@/lib/nodemailer";
+import { issueMemberSetupInvitation } from "@/lib/member-invitations";
 
 export async function GET() {
   try {
@@ -255,44 +255,18 @@ export async function PATCH(request: Request) {
         $or: [{ userId: { $exists: false } }, { userId: null }, { userId: "" }],
       }).lean();
 
-      const baseUrl =
-        process.env.NEXT_PUBLIC_SITE_URL ||
-        (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : null) ||
-        "http://localhost:3000";
-
       const sendResults = await Promise.all(
         members.map(async (member) => {
-          const recipient = member.email?.toLowerCase();
-          if (!recipient || !transporter) return false;
-          const inviteLink = `${baseUrl}/member-signup?email=${encodeURIComponent(
-            recipient
-          )}&groupName=${encodeURIComponent(group.name ?? "ChamaPulse group")}`;
-
           try {
-            await transporter.sendMail({
-              from: process.env.EMAIL_USER,
-              to: recipient,
-              subject: `Reminder: join ${group.name ?? "your ChamaPulse group"}`,
-              html: `
-                <div style="font-family: Arial, sans-serif; line-height: 1.6; color: #0b1220;">
-                  <h2 style="margin: 0 0 12px;">ChamaPulse reminder</h2>
-                  <p>You’ve been invited to join <strong>${group.name ?? "a ChamaPulse group"}</strong>.</p>
-                  <p>Create your member account to view contributions, payments, and payout schedules.</p>
-                  <p style="margin-top: 18px;">
-                    <a href="${inviteLink}" style="background:#1b5cff;color:#fff;padding:12px 18px;border-radius:999px;text-decoration:none;font-weight:600;">
-                      Accept invite
-                    </a>
-                  </p>
-                  <p style="font-size: 12px; color: #5a6882; margin-top: 16px;">
-                    If the button doesn't work, copy and paste this link into your browser:
-                    <br/>
-                    ${inviteLink}
-                  </p>
-                </div>
-              `,
+            const result = await issueMemberSetupInvitation({
+              groupId: String(group._id),
+              memberId: String(member._id),
+              invitedBy: access.session.user.id,
+              resend: true,
             });
-            return true;
-          } catch {
+            return result.delivery === "sent";
+          } catch (error) {
+            console.error("Unable to send ChamaHub member account reminder", error);
             return false;
           }
         })

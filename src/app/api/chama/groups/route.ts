@@ -5,7 +5,7 @@ import ChamaGroupModel from "@/lib/models/chama-group";
 import ChamaMemberModel from "@/lib/models/chama-member";
 import ChamaRoundModel from "@/lib/models/chama-round";
 import { calculatePotAmount, normalizeFrequency } from "@/lib/chama-utils";
-import { getSessionUser, isModerator, isSiteAdmin, linkMemberToUser } from "@/lib/chama-access";
+import { getSessionUser, isModerator, isSiteAdmin } from "@/lib/chama-access";
 import { ensureFinanceIndexes, runInFinancialTransaction, writeFinanceAudit } from "@/lib/finance/service";
 import { buildRoundSnapshot } from "@/lib/finance/round-snapshot";
 import { toMinorUnits } from "@/lib/finance/money";
@@ -17,7 +17,6 @@ export async function GET() {
       return NextResponse.json({ error: "Unauthorized." }, { status: 401 });
     }
 
-    await linkMemberToUser(user);
     await connectMongoose();
 
     const isAdmin = isSiteAdmin(user);
@@ -31,12 +30,8 @@ export async function GET() {
         status: "active",
       }).lean();
     } else {
-      const orConditions: Record<string, unknown>[] = [{ userId: user.id }];
-      if (user.email) {
-        orConditions.push({ email: user.email.toLowerCase() });
-      }
       memberRecords = await ChamaMemberModel.find({
-        $or: orConditions,
+        userId: user.id,
         status: "active",
       }).lean();
 
@@ -88,8 +83,7 @@ export async function GET() {
           : null,
         membership: members.find(
           (member) =>
-            member.userId === user.id ||
-            (user.email && member.email === user.email.toLowerCase())
+            member.userId === user.id
         ) ?? null,
         membersCount: activeCount,
       };

@@ -19,12 +19,26 @@ const MemberSchema = new Schema(
     },
     invitedBy: { type: String },
     joinedAt: { type: Date },
+    accountSetupStatus: {
+      type: String,
+      enum: ["invitation_sent", "setup_started", "activation_pending_verification", "account_activated", "invitation_revoked", "invitation_expired"],
+    },
+    accountSetupInvitationId: { type: String },
+    accountSetupTokenHash: { type: String, select: false },
+    accountSetupConsumedTokenHash: { type: String, select: false },
+    accountSetupExpiresAt: { type: Date },
+    accountSetupSentAt: { type: Date },
+    accountSetupAttemptId: { type: String, select: false },
+    accountSetupAttemptStartedAt: { type: Date, select: false },
+    accountSetupAttemptExpiresAt: { type: Date, select: false },
+    accountSetupRevokedAt: { type: Date },
   },
   { timestamps: true }
 );
 
 MemberSchema.index({ groupId: 1, userId: 1 });
 MemberSchema.index({ groupId: 1, email: 1 });
+MemberSchema.index({ accountSetupTokenHash: 1 }, { unique: true, sparse: true });
 
 export type ChamaMember = InferSchemaType<typeof MemberSchema>;
 

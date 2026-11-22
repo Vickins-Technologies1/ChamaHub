@@ -75,6 +75,10 @@ export default function AuthForm({ mode, role = "member", email = "", nextPath }
     setCanResend(false);
     try {
       if (mode === "sign-up") {
+        if (role !== "moderator") {
+          setError("Members can create accounts only from a secure invitation link sent by their group moderator.");
+          return;
+        }
         if (!name.trim()) {
           setError("Enter your full name.");
           return;
@@ -83,15 +87,14 @@ export default function AuthForm({ mode, role = "member", email = "", nextPath }
           setError("Choose a password with at least 12 characters.");
           return;
         }
-        const result = await authClient.signUp.email({
-          name: name.trim(),
-          email: address.trim().toLowerCase(),
-          password,
-          callbackURL: nextPath ?? verificationCallback,
+        const response = await fetch("/api/chama/moderator-registration", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ name: name.trim(), email: address.trim().toLowerCase(), password }),
         });
-        if (result.error) {
-          const code = result.error.code;
-          throw Object.assign(new Error(describeError(code, "We couldn't create your account. Please try again.")), { code, safeAuthMessage: true });
+        const result = await response.json().catch(() => ({})) as { error?: string };
+        if (!response.ok) {
+          throw Object.assign(new Error(result.error ?? "We couldn't create your account. Please try again."), { safeAuthMessage: true });
         }
         setMessage("If this is a new account, check your inbox for a verification link. If you’re waiting on an earlier signup, request a fresh link below. Already have an account? Sign in or reset your password.");
         setCanResend(true);
