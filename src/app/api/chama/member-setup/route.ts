@@ -210,6 +210,17 @@ export async function POST(request: NextRequest) {
         redirectTo: created.user.emailVerified ? "/chama" : null,
       }, { status: 201, headers: { "Cache-Control": "no-store", "Referrer-Policy": "no-referrer" } });
     } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      const safeErrorMessage = errorMessage
+        .replace(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi, "[redacted email]")
+        .replace(/\b[A-Za-z0-9_-]{32,}\b/g, "[redacted value]")
+        .replace(/\b(password|secret|token|authorization)\s*[:=]\s*[^,\s]+/gi, "$1=[redacted]")
+        .slice(0, 400);
+      console.error("Member account signup failed", {
+        name: error instanceof Error ? error.name : "UnknownError",
+        message: safeErrorMessage,
+      });
+
       const possibleUser = await database.collection<{ _id: string; emailVerified?: boolean; createdAt?: Date }>("auth_user").findOne(
         { email: { $regex: `^${escapedRegex(email)}$`, $options: "i" } },
         { projection: { _id: 1, emailVerified: 1, createdAt: 1 } },

@@ -210,6 +210,14 @@ export default function AdminLteShell({
             <span className={sidebarOpen ? "" : "hidden"}>Sign out</span>
           </button>
           <p className={sidebarOpen ? "dash-footer-note" : "hidden"}>© 2026 ChamaPulse</p>
+          <a
+            className={sidebarOpen ? "dash-powered-by" : "hidden"}
+            href="https://www.vickinstechnologies.com/"
+            target="_blank"
+            rel="noopener noreferrer"
+          >
+            Powered by Vickins Technologies
+          </a>
         </div>
       </aside>
 

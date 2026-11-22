@@ -540,6 +540,20 @@ h4 {
   color: var(--dash-sidebar-muted);
 }
 
+.dash-powered-by {
+  display: block;
+  margin-top: 6px;
+  font-size: 10px;
+  line-height: 1.4;
+  color: var(--dash-sidebar-muted);
+  transition: color 0.18s ease;
+}
+
+.dash-powered-by:hover {
+  color: var(--accent);
+  text-decoration: underline;
+}
+
 .dash-topbar {
   min-height: 64px;
   position: sticky;
