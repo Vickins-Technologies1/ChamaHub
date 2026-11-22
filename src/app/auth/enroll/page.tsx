@@ -19,5 +19,5 @@ function EnrollContent() {
 }
 
 export default function EnrollPage() {
-  return <Suspense fallback={<div className="min-h-screen" />}><EnrollContent /></Suspense>;
+  return <Suspense fallback={<AuthShell eyebrow="Secure account setup" title="Create your ChamaPulse account." subtitle="Verify your email and finish setting up your account securely." brandTitle="Account security" brandSubtitle="Email verification and recovery stay under ChamaPulse control." brandPoints={["Verified email address", "Secure password recovery", "Your group data stays linked"]}><p role="status" className="auth-alert auth-alert--info">Loading secure setup…</p></AuthShell>}><EnrollContent /></Suspense>;
 }

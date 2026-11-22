@@ -1,7 +1,9 @@
 "use client";
 
 import Link from "next/link";
+import { Home, Moon, Sun } from "lucide-react";
 import BrandLogo from "@/components/BrandLogo";
+import { useTheme } from "@/components/ThemePreloaderProvider";
 
 type AuthShellProps = {
   eyebrow: string;
@@ -22,54 +24,67 @@ export default function AuthShell({
   brandPoints,
   children,
 }: AuthShellProps) {
+  const { isDarkMode, toggleTheme } = useTheme();
+
   return (
-    <div className="auth-shell">
-      <div className="auth-shell__bg" />
+    <main className="auth-shell">
+      <div className="auth-shell__bg" aria-hidden="true" />
       <div className="auth-shell__grid">
         <aside className="auth-shell__brand">
-          <div className="flex items-center gap-3">
-            <BrandLogo size={54} priority />
-            <div>
-              <p className="text-xs uppercase tracking-[0.4em] text-white/70">ChamaPulse</p>
-              <p className="text-lg font-semibold text-white">{brandTitle}</p>
-            </div>
+          <Link href="/" className="auth-shell__brand-link" aria-label="ChamaPulse home">
+            <BrandLogo size={48} priority />
+            <span>
+              <span className="auth-shell__wordmark">ChamaPulse</span>
+              <span className="auth-shell__brand-title">{brandTitle}</span>
+            </span>
+          </Link>
+          <div className="auth-shell__brand-copy">
+            <p className="auth-shell__brand-heading">{brandSubtitle}</p>
+            <ul className="auth-shell__points">
+              {brandPoints.map((point) => (
+                <li key={point} className="auth-shell__bullet">
+                  <span className="auth-shell__bullet-dot" aria-hidden="true" />
+                  <span>{point}</span>
+                </li>
+              ))}
+            </ul>
           </div>
-          <p className="mt-6 text-2xl font-semibold text-white">{brandSubtitle}</p>
-          <div className="mt-6 space-y-3">
-            {brandPoints.map((point) => (
-              <div key={point} className="auth-shell__bullet">
-                <span className="auth-shell__bullet-dot" />
-                <span className="text-sm text-white/80">{point}</span>
-              </div>
-            ))}
-          </div>
-          <div className="mt-auto pt-10 text-xs text-white/60">
-            Secure access • Chama group tools
-          </div>
+          <p className="auth-shell__brand-footer">Secure access to your Chama workspace</p>
         </aside>
 
-        <section className="auth-shell__form">
+        <section className="auth-shell__form" aria-labelledby="auth-page-title">
           <div className="auth-shell__card">
-            <div className="flex items-center justify-between gap-4">
-              <div className="flex items-center gap-3 text-[var(--button-bg)] text-xs sm:text-sm uppercase tracking-[0.3em]">
-                <BrandLogo size={22} />
-                {eyebrow}
-              </div>
-              <Link
-                href="/"
-                className="inline-flex items-center rounded-full border border-[var(--glass-border)] bg-white/70 px-3 py-1 text-[10px] uppercase tracking-[0.24em] font-semibold text-[var(--foreground)]/70 hover:text-[var(--button-bg)] hover:bg-white transition"
-              >
-                Home
+            <header className="auth-shell__header">
+              <Link href="/" className="auth-shell__mobile-brand" aria-label="ChamaPulse home">
+                <BrandLogo size={30} />
+                <span>ChamaPulse</span>
               </Link>
+              <div className="auth-shell__toolbar">
+                <button
+                  type="button"
+                  className="auth-shell__icon-button"
+                  onClick={toggleTheme}
+                  aria-label={`Switch to ${isDarkMode ? "light" : "dark"} mode`}
+                  title={`Switch to ${isDarkMode ? "light" : "dark"} mode`}
+                >
+                  {isDarkMode ? <Sun size={17} /> : <Moon size={17} />}
+                </button>
+                <Link href="/" className="auth-shell__home-link">
+                  <Home size={15} aria-hidden="true" />
+                  <span>Home</span>
+                </Link>
+              </div>
+            </header>
+            <div className="auth-shell__intro">
+              <p className="auth-shell__eyebrow"><BrandLogo size={19} />{eyebrow}</p>
+              <h1 id="auth-page-title">{title}</h1>
+              <p className="auth-shell__subtitle">{subtitle}</p>
             </div>
-            <h1 className="text-2xl sm:text-3xl font-semibold mt-3 text-[var(--foreground)]">
-              {title}
-            </h1>
-            <p className="text-sm text-[var(--muted)] mt-3">{subtitle}</p>
-            <div className="mt-6">{children}</div>
+            <div className="auth-shell__content">{children}</div>
+            <footer className="auth-shell__footer">Your account and group information stay protected.</footer>
           </div>
         </section>
       </div>
-    </div>
+    </main>
   );
 }

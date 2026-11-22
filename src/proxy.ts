@@ -7,7 +7,7 @@ import { featureForRequest, isMaintenanceRouteAffected } from "@/lib/platform/po
 let maintenanceCache: { value: Record<string, unknown> | null; expiresAt: number } | null = null;
 let flagCache = new Map<string, { enabled: boolean; expiresAt: number }>();
 
-const authRoutes = ["/auth", "/member-login", "/member-setup", "/moderator-login", "/moderator-signup", "/forgot-password", "/maintenance"];
+const authRoutes = ["/auth", "/member-login", "/member-setup", "/moderator-login", "/moderator-signup", "/admin-login", "/forgot-password", "/reset-password", "/two-factor", "/maintenance"];
 const alwaysAvailablePrefixes = ["/admin", "/api/admin", "/api/jobs", "/api/webhooks", "/api/payments/callback"];
 
 function isPrefix(path: string, prefix: string) {

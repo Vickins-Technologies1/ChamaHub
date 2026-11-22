@@ -102,7 +102,7 @@ export async function POST(request: Request) {
     await db.collection("admin_access_invites").insertOne({ inviteId, inviteTokenHash, email, role: grant.role, permissions: grant.permissions, grantExpiresAt: grant.expiresAt, status: "pending", createdBy: access.session.user.id, createdAt: new Date(), expiresAt });
     try {
       const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : "http://localhost:3000");
-      const inviteUrl = `${siteUrl.replace(/\/$/, "")}/auth/admin-invite?token=${encodeURIComponent(inviteToken)}&email=${encodeURIComponent(email)}`;
+      const inviteUrl = `${siteUrl.replace(/\/$/, "")}/auth/admin-invite#token=${encodeURIComponent(inviteToken)}`;
       await sendTransactionalEmail({
         to: email,
         subject: "Your ChamaPulse administrator invitation",
