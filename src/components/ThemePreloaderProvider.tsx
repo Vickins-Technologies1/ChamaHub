@@ -2,6 +2,7 @@
 "use client";
 
 import { createContext, useContext, useState, useEffect, ReactNode, useCallback } from "react";
+import Preloader from "@/components/Preloader";
 
 interface ThemeContextType {
   isDarkMode: boolean;
@@ -51,6 +52,7 @@ export default function ThemePreloaderProvider({ children }: ThemePreloaderProvi
 
   return (
     <ThemeContext.Provider value={{ isDarkMode, toggleTheme }}>
+      <Preloader isDarkMode={isDarkMode} />
       {children}
     </ThemeContext.Provider>
   );
